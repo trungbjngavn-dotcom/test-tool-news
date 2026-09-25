@@ -66,9 +66,14 @@ function on(sel, type, fn) {
 }
 
 const api = async (url, opts = {}) => {
+  // Chỉ khai application/json khi THỰC SỰ có body JSON. Khai kèm body rỗng thì
+  // Fastify trả lỗi "Body cannot be empty when content-type is set to
+  // 'application/json'" — đúng trường hợp các nút chạy job (POST không body).
+  // FormData tự mang boundary riêng nên cũng không được đặt tay.
+  const isJson = opts.body != null && !(opts.body instanceof FormData);
   const r = await fetch(url, {
     ...opts,
-    headers: opts.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
+    headers: isJson ? { "Content-Type": "application/json" } : undefined,
   });
   if (!r.ok) throw new Error((await r.text()).slice(0, 400));
   return r.json();
