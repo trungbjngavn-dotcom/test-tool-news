@@ -13,6 +13,7 @@ import { mkdir, readdir, readFile, writeFile, stat, rm, copyFile } from "node:fs
 import { existsSync, createWriteStream } from "node:fs";
 import { pipeline as streamPipeline } from "node:stream/promises";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import axios from "axios";
@@ -242,17 +243,108 @@ app.post("/api/projects/:id/media-from-path", async (req) => {
 });
 
 /** Duyệt thư mục trên máy để chọn file mà không phải upload. */
+const MEDIA_RE = /[.](jpe?g|png|webp|gif|bmp|avif|mp4|mov|webm|mkv|m4v)$/i;
+const VIDEO_RE = /[.](mp4|mov|webm|mkv|m4v)$/i;
+
+const homeDir = () => process.env.USERPROFILE || process.env.HOME || ROOT;
+
+/** Lối tắt tới các thư mục hay dùng; chỉ liệt kê cái nào có thật. */
+function shortcuts(): Array<{ label: string; path: string }> {
+  const h = homeDir();
+  return [
+    { label: "Desktop", path: path.join(h, "Desktop") },
+    { label: "Downloads", path: path.join(h, "Downloads") },
+    { label: "Pictures", path: path.join(h, "Pictures") },
+    { label: "Videos", path: path.join(h, "Videos") },
+    { label: "Documents", path: path.join(h, "Documents") },
+  ].filter((x) => existsSync(x.path));
+}
+
+/** Tách đường dẫn thành các mẩu bấm được: C: > Users > AG195 > Downloads */
+function crumbsOf(abs: string): Array<{ name: string; path: string }> {
+  const out: Array<{ name: string; path: string }> = [];
+  let cur = abs;
+  for (;;) {
+    const parent = path.dirname(cur);
+    // gốc ổ đĩa có basename rỗng ("C:\") nên lấy mẩu cuối khác rỗng làm nhãn
+    const label = path.basename(cur) || cur.split(path.sep).filter(Boolean).pop() || cur;
+    out.unshift({ name: label, path: cur });
+    if (parent === cur) break;
+    cur = parent;
+  }
+  return out;
+}
+
 app.get("/api/browse", async (req) => {
   const { dir } = req.query as { dir?: string };
-  const target = dir && dir.trim() ? dir : process.env.USERPROFILE || process.env.HOME || ROOT;
+  const target = path.resolve(dir && dir.trim() ? dir : homeDir());
+  if (!existsSync(target)) throw new Error(`Không mở được thư mục: ${target}`);
+
   const entries = await readdir(target, { withFileTypes: true });
-  const media = /\.(jpe?g|png|webp|mp4|mov|webm|mkv|m4v)$/i;
+
+  const folders = entries
+    .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+    .map((e) => e.name)
+    .sort((a, b) => a.localeCompare(b, "vi"))
+    .slice(0, 800);
+
+  const fileNames = entries
+    .filter((e) => e.isFile() && MEDIA_RE.test(e.name))
+    .map((e) => e.name)
+    .sort((a, b) => a.localeCompare(b, "vi"))
+    .slice(0, 800);
+
+  // đọc kích thước + ngày sửa để xếp và hiển thị; stat lỗi thì bỏ qua file đó
+  const files = (
+    await Promise.all(
+      fileNames.map(async (name) => {
+        try {
+          const st = await stat(path.join(target, name));
+          return {
+            name,
+            kind: VIDEO_RE.test(name) ? "video" : "image",
+            bytes: st.size,
+            mtime: st.mtimeMs,
+          };
+        } catch {
+          return null;
+        }
+      }),
+    )
+  ).filter(Boolean);
+
   return {
-    dir: path.resolve(target),
-    parent: path.dirname(path.resolve(target)),
-    folders: entries.filter((e) => e.isDirectory() && !e.name.startsWith(".")).map((e) => e.name).slice(0, 500),
-    files: entries.filter((e) => e.isFile() && media.test(e.name)).map((e) => e.name).slice(0, 500),
+    dir: target,
+    parent: path.dirname(target),
+    atRoot: path.dirname(target) === target,
+    crumbs: crumbsOf(target),
+    shortcuts: shortcuts(),
+    folders,
+    files,
   };
+});
+
+/**
+ * Ảnh xem trước cho file BÊN NGOÀI dự án, phục vụ hộp thoại duyệt file.
+ * Chỉ nhận đuôi media và cache lại để duyệt thư mục lớn không phải dựng lại.
+ */
+const browseThumbDir = path.join(ROOT, ".cache", "browse-thumbs");
+app.get("/api/browse-thumb", async (req, reply) => {
+  const { path: filePath } = req.query as { path?: string };
+  if (!filePath || !MEDIA_RE.test(filePath) || !existsSync(filePath)) {
+    return reply.code(404).send({ error: "not found" });
+  }
+  await mkdir(browseThumbDir, { recursive: true });
+  const key = createHash("sha1").update(path.resolve(filePath)).digest("hex").slice(0, 16);
+  const out = path.join(browseThumbDir, `${key}.jpg`);
+  if (!existsSync(out)) {
+    try {
+      await makeThumb(filePath, out);
+    } catch {
+      return reply.code(415).send({ error: "khong doc duoc" });
+    }
+  }
+  return reply.type("image/jpeg").header("Cache-Control", "max-age=300").send(await readFile(out));
 });
 
 /** Phục vụ file trong dự án (thumb, media, video output) cho giao diện. */

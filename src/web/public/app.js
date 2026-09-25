@@ -936,50 +936,203 @@ function showExtract(ex) {
   box.append(ol);
 }
 
-// duyệt thư mục trong máy
+// ═════════════════════════ hộp thoại duyệt file trong máy ══════════════════
+
+const fb = {
+  dir: "",
+  folders: [],
+  files: [],
+  /** đường dẫn tuyệt đối của các file đang chọn */
+  picked: new Set(),
+  filter: "",
+};
+
 const openBrowse = async () => {
+  fb.picked.clear();
+  $("#browseFilter").value = "";
+  fb.filter = "";
+  $("#browsePath").hidden = true;
+  $("#browseCrumbs").hidden = false;
   $("#browseDlg").showModal();
   await browse("").catch(fail);
 };
 $("#btnBrowse").onclick = openBrowse;
 $("#btnBrowse2").onclick = openBrowse;
-$("#browseClose").onclick = (e) => { e.preventDefault(); $("#browseDlg").close(); };
-$("#browseGo").onclick = () => browse($("#browsePath").value).catch(fail);
+
+const closeBrowse = (e) => { e?.preventDefault(); $("#browseDlg").close(); };
+$("#browseClose").onclick = closeBrowse;
+$("#browseCancel").onclick = closeBrowse;
+
+$("#browseUp").onclick = () => browse(fb.parent).catch(fail);
+
+// gõ đường dẫn tay khi cần
+$("#browseEdit").onclick = () => {
+  const inp = $("#browsePath");
+  const showing = !inp.hidden;
+  inp.hidden = showing;
+  $("#browseCrumbs").hidden = !showing;
+  if (!showing) { inp.value = fb.dir; inp.focus(); inp.select(); }
+};
 $("#browsePath").onkeydown = (e) => {
   if (e.key === "Enter") { e.preventDefault(); browse($("#browsePath").value).catch(fail); }
+  if (e.key === "Escape") { e.preventDefault(); $("#browseEdit").onclick(); }
 };
 
+$("#browseFilter").oninput = (e) => {
+  fb.filter = e.target.value.trim().toLowerCase();
+  renderBrowse();
+};
+
+/** Nối đường dẫn theo đúng dấu phân cách của hệ điều hành đang duyệt. */
+function joinPath(dir, name) {
+  const sep = dir.includes("\\") ? "\\" : "/";
+  // gốc ổ đĩa đã sẵn dấu phân cách ("C:\\") thì không thêm nữa
+  const base = dir.endsWith("/") || dir.endsWith("\\") ? dir : dir + sep;
+  return base + name;
+}
+
+/** Đổi byte thành chuỗi gọn: 1.2 MB */
+function humanSize(n) {
+  if (!n) return "";
+  const u = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return `${n < 10 && i ? n.toFixed(1) : Math.round(n)} ${u[i]}`;
+}
+
 async function browse(dir) {
-  const r = await api(`/api/browse?dir=${encodeURIComponent(dir)}`);
+  const r = await api(`/api/browse?dir=${encodeURIComponent(dir ?? "")}`);
+  Object.assign(fb, {
+    dir: r.dir, parent: r.parent, atRoot: r.atRoot,
+    crumbs: r.crumbs, shortcuts: r.shortcuts,
+    folders: r.folders, files: r.files,
+  });
   $("#browsePath").value = r.dir;
+  $("#browseUp").disabled = r.atRoot;
+  renderCrumbs();
+  renderSide();
+  renderBrowse();
+  $("#browseList").scrollTop = 0;
+}
+
+function renderCrumbs() {
+  const nav = $("#browseCrumbs");
+  nav.innerHTML = "";
+  fb.crumbs.forEach((c, i) => {
+    if (i) nav.append(el("span", "sep", "›"));
+    const b = el("button", null, c.name);
+    b.title = c.path;
+    b.onclick = () => browse(c.path).catch(fail);
+    nav.append(b);
+  });
+  nav.scrollLeft = nav.scrollWidth;
+}
+
+function renderSide() {
+  const side = $("#browseSide");
+  side.innerHTML = "";
+  side.append(el("div", "title", "Truy cập nhanh"));
+  for (const sc of fb.shortcuts) {
+    const b = el("button", fb.dir === sc.path ? "on" : "");
+    b.append(icon(ICON.folder), el("span", null, sc.label));
+    b.onclick = () => browse(sc.path).catch(fail);
+    side.append(b);
+  }
+}
+
+function renderBrowse() {
   const list = $("#browseList");
   list.innerHTML = "";
 
-  const up = el("div");
-  up.append(icon(ICON.up), el("span", null, ".."));
-  up.onclick = () => browse(r.parent).catch(fail);
-  list.append(up);
+  const match = (n) => !fb.filter || n.toLowerCase().includes(fb.filter);
+  const folders = fb.folders.filter(match);
+  const files = fb.files.filter((f) => match(f.name));
 
-  for (const f of r.folders) {
-    const d = el("div");
-    d.append(icon(ICON.folder), el("span", null, f));
-    d.onclick = () => browse(r.dir + "\\" + f).catch(fail);
-    list.append(d);
+  if (!folders.length && !files.length) {
+    list.append(el("p", "note empty-note",
+      fb.filter ? "Không có mục nào khớp bộ lọc." : "Thư mục này không có ảnh hoặc video."));
+    updateBrowseFoot();
+    return;
   }
-  for (const f of r.files) {
-    const d = el("div");
-    d.append(icon(ICON.file), el("span", null, f));
-    d.onclick = async () => {
-      d.style.opacity = ".5";
-      try {
-        const { added } = await api(`/api/projects/${state.id}/media-from-path`, {
-          method: "POST", body: JSON.stringify({ filePath: r.dir + "\\" + f }),
-        });
-        applyAdded(added);
-      } catch (e) { fail(e); }
-      finally { d.style.opacity = "1"; }
-    };
-    list.append(d);
+
+  if (folders.length) {
+    list.append(el("div", "row-title", `Thư mục · ${folders.length}`));
+    const box = el("div", "fb-folders");
+    for (const name of folders) {
+      const d = el("div", "fb-folder");
+      d.append(icon(ICON.folder), el("span", null, name));
+      d.title = name;
+      d.onclick = () => browse(joinPath(fb.dir, name)).catch(fail);
+      box.append(d);
+    }
+    list.append(box);
+  }
+
+  if (files.length) {
+    list.append(el("div", "row-title", `Ảnh & video · ${files.length}`));
+    const box = el("div", "fb-files");
+    for (const f of files) {
+      const abs = joinPath(fb.dir, f.name);
+      const card = el("div", "fb-file" + (fb.picked.has(abs) ? " sel" : ""));
+      card.title = f.name + " — " + humanSize(f.bytes);
+
+      const img = el("img", "ph");
+      img.loading = "lazy";
+      img.alt = "";
+      img.src = `/api/browse-thumb?path=${encodeURIComponent(abs)}`;
+      img.onerror = () => { img.style.visibility = "hidden"; };
+      card.append(img);
+
+      card.append(el("span", "kind", f.kind === "video" ? "VIDEO" : "ẢNH"));
+      card.append(el("span", "tick"));
+
+      const meta = el("div", "meta");
+      meta.append(el("div", "nm", f.name), el("div", "sz", humanSize(f.bytes)));
+      card.append(meta);
+
+      card.onclick = () => {
+        if (fb.picked.has(abs)) fb.picked.delete(abs);
+        else fb.picked.add(abs);
+        card.classList.toggle("sel", fb.picked.has(abs));
+        updateBrowseFoot();
+      };
+      // bấm đúp = chọn và thêm luôn
+      card.ondblclick = () => { fb.picked.add(abs); addPicked().catch(fail); };
+      box.append(card);
+    }
+    list.append(box);
+  }
+  updateBrowseFoot();
+}
+
+function updateBrowseFoot() {
+  const n = fb.picked.size;
+  $("#browseAdd").disabled = n === 0;
+  $("#browseAdd").textContent = n ? `Thêm ${n} file vào thư viện` : "Thêm vào thư viện";
+  $("#browseInfo").textContent = n ? `Đã chọn ${n} file` : "Bấm để chọn, bấm đúp để thêm ngay";
+}
+
+$("#browseAdd").onclick = () => addPicked().catch(fail);
+
+async function addPicked() {
+  const paths = [...fb.picked];
+  if (!paths.length) return;
+  const btn = $("#browseAdd");
+  btn.disabled = true;
+  btn.textContent = `Đang nạp ${paths.length} file…`;
+  try {
+    const all = [];
+    for (const filePath of paths) {
+      const { added } = await api(`/api/projects/${state.id}/media-from-path`, {
+        method: "POST", body: JSON.stringify({ filePath }),
+      });
+      all.push(...added);
+    }
+    applyAdded(all);
+    fb.picked.clear();
+    $("#browseDlg").close();
+  } finally {
+    updateBrowseFoot();
   }
 }
 
