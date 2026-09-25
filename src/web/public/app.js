@@ -568,7 +568,6 @@ function renderSettings() {
   $("#voiceRate").value = p.voice.rate;
   $("#voicePitch").value = p.voice.pitch ?? "+0Hz";
   $("#voiceId").value = p.voice.voiceId;
-  updateVoiceHint();
   $("#outroInfo").textContent = p.outro.src
     ? `Đang dùng ${p.outro.src} — ${p.outro.durationSec}s`
     : "Chưa có outro. Video sẽ kết thúc ngay ở nhịp cuối.";
@@ -721,27 +720,43 @@ $("#fileInput").onchange = async (e) => {
 };
 
 // kéo thả file vào cả cửa sổ
-let dragDepth = 0;
 const hasFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes("Files");
+
+/* dragenter/dragleave bắn liên tục khi con trỏ đi qua từng phần tử con, nên
+   đếm độ sâu thay vì tắt ngay ở lần dragleave đầu tiên. */
+let dragDepth = 0;
+
+function showDropCue(on) {
+  $("#dropveil").hidden = !on;
+  $("#mediaCard")?.classList.toggle("is-target", on);
+  if (!on) {
+    $("#dropzone").classList.remove("hot");
+    document.querySelector(".media-add")?.classList.remove("hot");
+  }
+}
+
 window.addEventListener("dragenter", (e) => {
   if (!hasFiles(e) || !state.id) return;
   dragDepth++;
-  $("#dropveil").hidden = false;
+  showDropCue(true);
 });
 window.addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
 window.addEventListener("dragleave", () => {
-  if (--dragDepth <= 0) { dragDepth = 0; $("#dropveil").hidden = true; }
+  if (--dragDepth <= 0) { dragDepth = 0; showDropCue(false); }
 });
+// rê ra ngoài cửa sổ rồi thả ở chỗ khác thì không có sự kiện drop -> tự dọn
+window.addEventListener("dragend", () => { dragDepth = 0; showDropCue(false); });
+
 window.addEventListener("drop", async (e) => {
   if (!hasFiles(e)) return;
   e.preventDefault();
   dragDepth = 0;
-  $("#dropveil").hidden = true;
+  showDropCue(false);
   if (!state.id) return fail("Tạo dự án trước đã.");
   await addFiles([...e.dataTransfer.files]).catch(fail);
 });
 
-// vùng thả riêng trong cột trái (đổi màu khi rê qua)
+// vùng thả trong cột trái sáng thêm một bậc khi con trỏ ở đúng trên nó
 const dz = $("#dropzone");
 dz.addEventListener("dragover", (e) => { if (hasFiles(e)) { e.preventDefault(); dz.classList.add("hot"); } });
 dz.addEventListener("dragleave", () => dz.classList.remove("hot"));
@@ -784,7 +799,6 @@ $("#voiceRate").onchange = (e) => { state.project.voice.rate = e.target.value; i
 $("#voicePitch").onchange = (e) => { state.project.voice.pitch = e.target.value; invalidateVo(); touch(); };
 $("#voiceId").onchange = (e) => {
   state.project.voice.voiceId = e.target.value;
-  updateVoiceHint();
   invalidateVo();
   touch();
 };
@@ -1040,22 +1054,16 @@ window.addEventListener("beforeunload", (e) => {
 
 // ───────────────────────────────────────────── khởi động
 
-/** Dựng <select> giọng theo nhóm, cùng hai ô tốc độ và cao độ. */
+/** Dựng ba ô chọn: giọng, tốc độ, cao độ. */
 function fillVoiceControls({ voices, rates, pitches }) {
   state.voices = voices;
 
   const sel = $("#voiceId");
   sel.innerHTML = "";
-  const groups = [...new Set(voices.map((v) => v.group))];
-  for (const g of groups) {
-    const og = document.createElement("optgroup");
-    og.label = g;
-    for (const v of voices.filter((x) => x.group === g)) {
-      const o = el("option", null, `${v.label} (${v.gender})`);
-      o.value = v.id;
-      og.append(o);
-    }
-    sel.append(og);
+  for (const v of voices) {
+    const o = el("option", null, `${v.label} (${v.gender})`);
+    o.value = v.id;
+    sel.append(o);
   }
 
   for (const [id, list] of [["#voiceRate", rates], ["#voicePitch", pitches]]) {
@@ -1069,17 +1077,10 @@ function fillVoiceControls({ voices, rates, pitches }) {
   }
 }
 
-/** Nhắc rằng giọng đa ngữ còn pha âm sắc nước ngoài. */
-function updateVoiceHint() {
-  const v = (state.voices ?? []).find((x) => x.id === $("#voiceId").value);
-  $("#voiceHint").hidden = !v || v.native;
-}
-
 (async function init() {
   try {
     fillVoiceControls(await api("/api/voices"));
     await refreshProjects();
-    updateVoiceHint();
   } catch (e) {
     fail(e);
   }

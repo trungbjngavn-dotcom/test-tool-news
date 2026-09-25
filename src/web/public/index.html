@@ -80,9 +80,6 @@
           <span>Giọng</span>
           <select id="voiceId"></select>
         </label>
-        <p id="voiceHint" class="note note--warn" hidden>
-          Giọng đa ngữ đọc được tiếng Việt nhưng còn pha âm sắc nước ngoài — nghe thử trước khi chốt.
-        </p>
         <div class="field-row">
           <label class="field">
             <span>Tốc độ</span>
@@ -233,7 +230,12 @@
 </dialog>
 
 <div id="toasts" class="toasts"></div>
-<div id="dropveil" class="dropveil" hidden><span>Thả file để thêm vào thư viện</span></div>
+<div id="dropveil" class="dropveil" hidden>
+  <div class="dropveil-pill">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5V4m0 0L8.2 7.8M12 4l3.8 3.8"/><path d="M4 15v3.5A1.5 1.5 0 005.5 20h13a1.5 1.5 0 001.5-1.5V15"/></svg>
+    <span>Thả để thêm vào thư viện</span>
+  </div>
+</div>
 
 <script type="module" src="/app.js"></script>
 </body>

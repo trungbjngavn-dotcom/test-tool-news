@@ -75,25 +75,20 @@ hiển thị nhỏ (có khi chỉ 320×179). Hãy lưu ảnh gốc về máy r�
 
 Dùng **edge-tts** (dịch vụ TTS của Microsoft Edge, miễn phí, không cần tài khoản).
 
-**14 giọng**, chia hai nhóm:
+Hai giọng tiếng Việt bản địa — Microsoft chỉ có đúng hai:
 
-| Nhóm | Giọng |
-|------|-------|
-| Tiếng Việt bản địa | Nam Minh (nam), Hoài My (nữ) |
-| Đa ngữ — đọc được tiếng Việt | Andrew, Brian, William, Hyunsu, Giuseppe, Florian, Rémy (nam); Ava, Emma, Seraphina, Vivienne, Thalita (nữ) |
+| Giọng | Mã |
+|-------|-----|
+| Nam Minh (nam) | `vi-VN-NamMinhNeural` |
+| Hoài My (nữ) | `vi-VN-HoaiMyNeural` |
 
-Microsoft chỉ có đúng hai giọng Việt bản địa. Nhóm đa ngữ đã được thử thật với
-một câu tiếng Việt — tất cả đều ra audio dài tương đương giọng bản địa (4,6–5,7
-giây cho cùng một câu), tức là chúng đọc chứ không đánh vần. Chất giọng thì còn
-pha âm sắc nước ngoài ở mức khác nhau, nên giao diện có nhắc và bạn **nên bấm
-Nghe thử trước khi chốt**.
-
-Hai trục điều chỉnh thêm:
+Độ đa dạng đến từ hai trục điều chỉnh:
 
 - **Tốc độ** — chậm / hơi chậm / bình thường / hơi nhanh / nhanh kiểu bản tin
 - **Cao độ** — trầm / hơi trầm / bình thường / hơi cao / cao
 
-Kết hợp 14 giọng × 5 tốc độ × 5 cao độ cho khá nhiều lựa chọn dù số giọng bản địa ít.
+Tức 2 × 5 × 5 = 50 tổ hợp. (Edge còn nhóm giọng "Multilingual" đọc được tiếng
+Việt nhưng pha âm sắc nước ngoài nên không đưa vào danh sách.)
 
 Ô **Nghe thử** ở cột trái để thử nhanh; mỗi nhịp cũng có nút **Nghe thử** riêng.
 

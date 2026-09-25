@@ -353,25 +353,43 @@ main {
 .dz-sub { margin: 0 0 11px; font-size: 12px; color: var(--text-3); max-width: 210px; }
 .dropzone .btn { margin-bottom: 3px; }
 
-/* lớp phủ toàn cửa sổ khi đang rê file */
+/* ── đang rê file qua cửa sổ ────────────────────────────────────────────────
+   Không phủ đen màn hình: chỉ viền sáng chạy quanh mép và một pill nhỏ dưới
+   đáy. Nội dung vẫn đọc được, và chính thẻ thư viện sáng lên để chỉ đích đến. */
 .dropveil {
   position: fixed; inset: 0; z-index: 90;
-  display: grid; place-items: center;
-  background: color-mix(in srgb, var(--accent) 16%, rgba(6, 9, 16, .55));
-  backdrop-filter: blur(4px);
+  display: flex; align-items: flex-end; justify-content: center;
+  padding-bottom: 30px;
   pointer-events: none;
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    inset 0 0 0 7px color-mix(in srgb, var(--accent) 14%, transparent),
+    inset 0 0 70px -22px color-mix(in srgb, var(--accent) 60%, transparent);
+  animation: veil-in 150ms ease-out;
 }
-.dropveil span {
-  display: flex; align-items: center; gap: 11px;
-  font-size: 16px; font-weight: 650; color: #fff;
-  background: rgba(255, 255, 255, .1);
-  border: 2px dashed rgba(255, 255, 255, .8);
-  border-radius: 18px; padding: 20px 30px;
+@keyframes veil-in { from { opacity: 0; } }
+
+.dropveil-pill {
+  display: flex; align-items: center; gap: 9px;
+  padding: 11px 20px 11px 16px;
+  border-radius: 100px;
+  background: var(--accent); color: var(--accent-ink);
+  font-size: 13.5px; font-weight: 600; letter-spacing: -.005em;
+  box-shadow: 0 8px 26px color-mix(in srgb, var(--accent) 42%, transparent), var(--sh-2);
+  animation: pill-in 220ms cubic-bezier(.22, .9, .3, 1.1);
 }
-.dropveil span::before {
-  content: ""; width: 22px; height: 22px; flex: none;
-  background: no-repeat center / contain
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 15.5V4m0 0L8.2 7.8M12 4l3.8 3.8'/><path d='M4 15v3.5A1.5 1.5 0 005.5 20h13a1.5 1.5 0 001.5-1.5V15'/></svg>");
+.dropveil-pill svg { width: 17px; height: 17px; stroke-width: 2; }
+@keyframes pill-in { from { opacity: 0; transform: translateY(14px) scale(.94); } }
+
+/* thẻ thư viện là đích đến -> làm nổi nó lên */
+#mediaCard.is-target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent), var(--sh-2);
+}
+#mediaCard.is-target .dropzone,
+#mediaCard.is-target .media-add {
+  border-color: var(--accent); border-style: solid;
+  background: var(--accent-bg); color: var(--accent);
 }
 
 /* ─────────────────────────────── lưới media ─────────────────────────────── */
