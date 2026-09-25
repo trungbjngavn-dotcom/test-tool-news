@@ -101,13 +101,21 @@ export const ProjectSchema = z.object({
   beats: z.array(BeatSchema).min(1),
 
   /**
-   * Nhịp nghỉ (giây). Giọng đọc đã được cắt hết im lặng đầu/cuối (chỉ chừa 40ms
-   * lề mỗi bên), nên các số này chính là khoảng nghỉ nghe thấy giữa hai câu.
-   * Để nhỏ cho lời đọc chảy liền như một đoạn văn.
+   * Nhịp nghỉ (giây). Giọng đọc đã cắt hết im lặng đầu/cuối, chỉ chừa 40ms lề
+   * mỗi bên — nên khoảng nghe thấy = số ở đây + 0,08s.
+   *
+   * Các số này đo từ video mẫu (`New folder (5)/f1.mp4`): với mỗi lần khối chữ
+   * dưới đổi, đo độ rộng vùng trũng âm lượng quanh mốc đó. Kết quả: giữa các
+   * câu 0,69s (trung vị, dải 0,47–0,80), sau card mở đầu 0,93s, câu đầu vào ở
+   * giây 0,22.
+   *
+   * Số đặt ở đây nhỏ hơn số đo khoảng 0,15s vì phép đo bắt cả phần âm lượng tắt
+   * dần ở rìa câu. Video mẫu làm thủ công nên nhịp của nó vốn không đều
+   * (0,47–0,80s); ở đây chỉ cần bám tương đối cho tự nhiên, không cần khớp số.
    */
-  leadInSec: z.number().default(0.25),
-  gapSec: z.number().default(0.1),
-  titlePadSec: z.number().default(0.22),
+  leadInSec: z.number().default(0.22),
+  gapSec: z.number().default(0.45),
+  titlePadSec: z.number().default(0.63),
   /** Riêng trước outro vẫn để nghỉ rõ, cho người xem biết bản tin đã hết. */
   outroGapSec: z.number().default(0.85),
 

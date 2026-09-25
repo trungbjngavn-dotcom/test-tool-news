@@ -109,13 +109,21 @@ Ba số điều khiển nằm trong `project.json`:
 
 | Khoá | Mặc định | Ý nghĩa |
 |------|----------|---------|
-| `leadInSec` | 0,25 | im lặng trước câu đầu tiên |
-| `gapSec` | 0,10 | nghỉ giữa hai nhịp thường |
-| `titlePadSec` | 0,22 | nghỉ sau card mở đầu |
+| `leadInSec` | 0,22 | im lặng trước câu đầu tiên |
+| `gapSec` | 0,45 | nghỉ giữa hai nhịp thường |
+| `titlePadSec` | 0,63 | nghỉ sau card mở đầu |
 | `outroGapSec` | 0,85 | nghỉ trước outro |
 
-Bài mẫu 9 nhịp rút từ 62,19s xuống 44,73s sau khi cắt — tức trước đó có 17,5
-giây là khoảng lặng chết.
+Các số này lấy từ **video mẫu** `New folder (5)/f1.mp4`. Cách đo: bắt thời điểm
+khối chữ dưới đổi (so sánh khung hình vùng y 1070–1610), rồi với mỗi mốc đo độ
+rộng vùng trũng âm lượng trong dải tiếng nói 300–3400 Hz. Phải làm vòng vo vậy
+vì video mẫu có nhạc nền chạy liên tục, `silencedetect` thẳng không thấy gì.
+
+Kết quả mẫu: giữa các câu **0,69s** (dải 0,47–0,80), sau card mở đầu 0,93s, câu
+đầu vào ở giây 0,22. Bản dựng ra cũng cho trung vị 0,69s (dải 0,61–0,93).
+
+Video mẫu làm thủ công nên nhịp vốn không đều — bám tương đối cho tự nhiên là đủ,
+không cần khớp từng số.
 
 ### Cache giọng đọc
 
