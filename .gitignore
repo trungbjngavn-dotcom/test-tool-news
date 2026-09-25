@@ -13,3 +13,7 @@ SFX/
 
 # Anh xem truoc cua hop thoai duyet file (tai tao duoc)
 .cache/
+
+# Du an nguoi dung: video render, giong doc, media copy vao, cache transcode.
+# Deu la san pham sinh ra tu ma nguon, khong dua len repo.
+projects/
