@@ -100,10 +100,16 @@ export const ProjectSchema = z.object({
   media: z.record(z.string(), MediaSchema).default({}),
   beats: z.array(BeatSchema).min(1),
 
-  /** Nhịp nghỉ (giây). */
+  /**
+   * Nhịp nghỉ (giây). Giọng đọc đã được cắt hết im lặng đầu/cuối (chỉ chừa 40ms
+   * lề mỗi bên), nên các số này chính là khoảng nghỉ nghe thấy giữa hai câu.
+   * Để nhỏ cho lời đọc chảy liền như một đoạn văn.
+   */
   leadInSec: z.number().default(0.25),
-  gapSec: z.number().default(0.16),
-  titlePadSec: z.number().default(0.55),
+  gapSec: z.number().default(0.1),
+  titlePadSec: z.number().default(0.22),
+  /** Riêng trước outro vẫn để nghỉ rõ, cho người xem biết bản tin đã hết. */
+  outroGapSec: z.number().default(0.85),
 
   // ── do pipeline ghi vào ──
   shots: z

@@ -17,7 +17,7 @@ import { composeNewsroom } from "./composer.js";
 import { EdgeTtsClient } from "../tts/edge-tts-client.js";
 import { createHash } from "node:crypto";
 import type { TtsClient } from "../tts/tts-client.js";
-import { probeDurationSec, ffmpegConvert } from "./media-probe.js";
+import { probeDurationSec, trimSilence } from "./media-probe.js";
 
 export type Progress = (ev: { step: string; detail?: string; pct?: number }) => void;
 
@@ -38,8 +38,13 @@ function ttsFor(p: Project): TtsClient {
  * ký này nên đổi giọng, tốc độ hay cao độ là tự sinh lại, còn sửa một câu thì
  * các câu khác vẫn dùng lại file cũ.
  */
+/** Tăng số này khi cách xử lý audio đổi, để file cũ bị sinh lại. */
+const VO_PIPELINE_VERSION = "2-trimmed";
+
 function voSignature(p: Project, text: string): string {
-  const key = [p.voice.provider, p.voice.voiceId, p.voice.rate, p.voice.pitch, text].join("\u0000");
+  const key = [
+    VO_PIPELINE_VERSION, p.voice.provider, p.voice.voiceId, p.voice.rate, p.voice.pitch, text,
+  ].join("\u0000");
   return createHash("sha1").update(key).digest("hex").slice(0, 10);
 }
 
@@ -84,7 +89,8 @@ export async function synthVoices(
         if (!ok) await new Promise((r) => setTimeout(r, 1500 * (k + 1)));
       }
       if (!ok) throw new Error(`Không sinh được giọng đọc cho beat "${b.id}" sau nhiều lần thử.`);
-      await ffmpegConvert(mp3, wav, ["-ar", "44100", "-ac", "2"]);
+      // cắt im lặng thừa để các câu nối nhau liền mạch như một đoạn văn
+      await trimSilence(mp3, wav);
     }
 
     b.voDurationSec = Math.round((await probeDurationSec(wav)) * 1000) / 1000;

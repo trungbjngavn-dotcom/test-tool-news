@@ -95,6 +95,28 @@ Việt nhưng pha âm sắc nước ngoài nên không đưa vào danh sách.)
 
 Ô **Nghe thử** ở cột trái để thử nhanh; mỗi nhịp cũng có nút **Nghe thử** riêng.
 
+### Nối câu liền mạch
+
+edge-tts luôn chèn sẵn **~0,25 giây im lặng đầu** và **~0,85 giây cuối** mỗi câu.
+Ghép nhiều câu lại thì mỗi chỗ nối hở hơn một giây, nghe như đọc rời từng câu.
+
+Pipeline tự cắt phần im lặng đó đi (chừa 40ms lề mỗi bên để không cụt phụ âm),
+nên khoảng nghỉ nghe thấy giữa hai câu chỉ còn **~0,18 giây** — đúng nhịp đọc
+liền của một đoạn văn. Riêng **trước outro vẫn nghỉ ~1 giây** để người xem biết
+bản tin đã hết.
+
+Ba số điều khiển nằm trong `project.json`:
+
+| Khoá | Mặc định | Ý nghĩa |
+|------|----------|---------|
+| `leadInSec` | 0,25 | im lặng trước câu đầu tiên |
+| `gapSec` | 0,10 | nghỉ giữa hai nhịp thường |
+| `titlePadSec` | 0,22 | nghỉ sau card mở đầu |
+| `outroGapSec` | 0,85 | nghỉ trước outro |
+
+Bài mẫu 9 nhịp rút từ 62,19s xuống 44,73s sau khi cắt — tức trước đó có 17,5
+giây là khoảng lặng chết.
+
 ### Cache giọng đọc
 
 File nằm trong `projects/<id>/assets/vo/` và được đặt tên theo **chữ ký** gồm

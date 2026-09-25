@@ -50,6 +50,30 @@ export async function ffmpegConvert(input: string, output: string, extra: string
   await run("ffmpeg", ["-v", "error", "-i", `"${input}"`, ...extra, `"${output}"`, "-y"]);
 }
 
+/**
+ * Cắt im lặng ở đầu và cuối một file giọng đọc.
+ *
+ * edge-tts luôn chèn sẵn khoảng ~0,25 giây im lặng đầu và ~0,85 giây cuối mỗi
+ * câu. Ghép nhiều câu lại thì mỗi chỗ nối hở hơn một giây, nghe rời rạc như đọc
+ * từng câu một chứ không phải một đoạn văn liền mạch.
+ *
+ * Cách làm là mẹo quen thuộc của ffmpeg: bỏ im lặng đầu, đảo ngược, bỏ im lặng
+ * đầu lần nữa (chính là phần đuôi), rồi đảo lại. `start_silence` giữ lại một
+ * chút im lặng để không cắt cụt phụ âm đầu/cuối.
+ */
+export async function trimSilence(input: string, output: string): Promise<void> {
+  const one =
+    "silenceremove=start_periods=1:start_silence=0.04:start_threshold=-42dB:detection=peak";
+  await run("ffmpeg", [
+    "-v", "error",
+    "-i", `"${input}"`,
+    "-af", `"${one},areverse,${one},areverse"`,
+    "-ar", "44100", "-ac", "2",
+    `"${output}"`,
+    "-y",
+  ]);
+}
+
 /** Ảnh đại diện cho giao diện: ảnh thì thu nhỏ, video thì lấy 1 khung. */
 export async function makeThumb(input: string, output: string): Promise<void> {
   await mkdir(path.dirname(output), { recursive: true });

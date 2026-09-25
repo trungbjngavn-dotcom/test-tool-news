@@ -61,9 +61,19 @@ export function computeTimeline(project: Project): Project {
   if (shots.length > 0) shots[0].startSec = 0;
   for (const s of shots) s.durationSec = round(s.endSec - s.startSec);
 
+  // Giữa các câu thì liền mạch, nhưng trước outro vẫn nghỉ hẳn một nhịp.
+  const outroGap = project.outro.src ? project.outroGapSec : 0;
+  const outroStart = round(t + outroGap);
+  // Cảnh cuối phải kéo dài hết khoảng nghỉ đó, nếu không sẽ hở ra khung đen.
+  if (outroGap > 0 && shots.length > 0) {
+    const last = shots[shots.length - 1];
+    last.endSec = outroStart;
+    last.durationSec = round(last.endSec - last.startSec);
+  }
+
   project.shots = shots;
-  project.outro.startSec = round(t);
-  project.totalSec = round(t + project.outro.durationSec);
+  project.outro.startSec = outroStart;
+  project.totalSec = round(outroStart + project.outro.durationSec);
   return project;
 }
 
