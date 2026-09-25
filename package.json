@@ -15,7 +15,9 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "sfx:download": "tsx scripts/download-sfx.ts",
-    "sfx:filter": "tsx scripts/filter-sfx.ts"
+    "sfx:filter": "tsx scripts/filter-sfx.ts",
+    "newsroom": "tsx src/newsroom/cli.ts",
+    "web": "tsx src/web/server.ts"
   },
   "keywords": [
     "video",
@@ -36,9 +38,13 @@
     "url": "https://github.com/Cuongyd196/auto-video-gen.git"
   },
   "dependencies": {
+    "@fastify/multipart": "^10.1.2",
+    "@fastify/static": "^10.1.4",
     "axios": "^1.15.2",
+    "cheerio": "^1.2.0",
     "dotenv": "^17.4.2",
     "edge-tts-universal": "^1.4.0",
+    "fastify": "^5.12.5",
     "hyperframes": "^0.4.34",
     "p-limit": "^7.3.0",
     "zod": "^4.3.6"

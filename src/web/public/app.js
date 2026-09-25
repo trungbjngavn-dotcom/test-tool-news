@@ -1,0 +1,980 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   Video Studio — giao diện (vanilla JS, không build step)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => [...document.querySelectorAll(s)];
+
+function el(tag, cls, txt) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (txt != null) n.textContent = txt;
+  return n;
+}
+
+/** Đường vẽ icon dùng lại nhiều chỗ. */
+const ICON = {
+  trash: "M4 7h16M9 7V5.5A1.5 1.5 0 0110.5 4h3A1.5 1.5 0 0115 5.5V7m-9 0l.8 12A1.5 1.5 0 008.3 20h7.4a1.5 1.5 0 001.5-1.4L18 7",
+  up: "M12 19V5m0 0l-6 6m6-6l6 6",
+  down: "M12 5v14m0 0l6-6m-6 6l-6-6",
+  copy: "M9 9h10v10H9zM5 15V5h10",
+  grip: "M9 6h.01M9 12h.01M9 18h.01M15 6h.01M15 12h.01M15 18h.01",
+  folder: "M3 7.5A1.5 1.5 0 014.5 6h4l2 2.5h9A1.5 1.5 0 0121 10v8a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 18z",
+  file: "M14 3H7.5A1.5 1.5 0 006 4.5v15A1.5 1.5 0 007.5 21h9a1.5 1.5 0 001.5-1.5V7zM14 3v4h4",
+  x: "M6 6l12 12M18 6L6 18",
+};
+
+function icon(d) {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const p = document.createElementNS(ns, "path");
+  p.setAttribute("d", d);
+  svg.append(p);
+  return svg;
+}
+
+/** Textarea tự cao theo nội dung — bớt khoảng trống thừa trên thẻ nhịp. */
+function autoGrow(ta, minRows = 2) {
+  ta.rows = minRows;
+  ta.classList.add("auto");
+  const fit = () => {
+    ta.style.height = "auto";
+    ta.style.height = ta.scrollHeight + "px";
+  };
+  ta.addEventListener("input", fit);
+  requestAnimationFrame(fit);
+  ta.fit = fit;
+  return ta;
+}
+
+const api = async (url, opts = {}) => {
+  const r = await fetch(url, {
+    ...opts,
+    headers: opts.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
+  });
+  if (!r.ok) throw new Error((await r.text()).slice(0, 400));
+  return r.json();
+};
+
+// ───────────────────────────────────────────── thông báo nổi
+
+function toast(msg, kind = "") {
+  const t = el("div", "toast " + kind, msg);
+  $("#toasts").append(t);
+  setTimeout(() => {
+    t.classList.add("out");
+    t.addEventListener("animationend", () => t.remove(), { once: true });
+  }, kind === "err" ? 7000 : 3200);
+}
+const fail = (e) => toast(typeof e === "string" ? e : e.message, "err");
+
+// ───────────────────────────────────────────── trạng thái
+
+const state = {
+  id: null,
+  project: null,
+  projects: [],
+  /** khoá media → {kind, thumb}; chỉ phục vụ giao diện, không ghi vào project.json */
+  mediaMeta: {},
+  /** đổi mỗi khi file trên đĩa thay đổi, để phá cache ảnh */
+  stamp: 0,
+  saveTimer: null,
+};
+
+const fileUrl = (rel) => `/api/projects/${state.id}/file/${rel}?t=${state.stamp}`;
+
+/** Đánh dấu có thay đổi → tự lưu sau 700ms im lặng. */
+function touch() {
+  setSaveState("saving", "Đang lưu…");
+  clearTimeout(state.saveTimer);
+  state.saveTimer = setTimeout(() => saveProject().catch(fail), 700);
+}
+
+function setSaveState(cls, txt) {
+  const n = $("#saveState");
+  n.className = "savestate " + cls;
+  n.textContent = txt || " ";
+}
+
+async function saveProject() {
+  if (!state.id) return;
+  clearTimeout(state.saveTimer);
+  await api(`/api/projects/${state.id}`, { method: "PUT", body: JSON.stringify(state.project) });
+  setSaveState("saved", "Đã lưu");
+  setTimeout(() => {
+    if ($("#saveState").classList.contains("saved")) setSaveState("", "");
+  }, 2200);
+}
+
+// ───────────────────────────────────────────── dự án
+
+async function refreshProjects(selectId) {
+  state.projects = await api("/api/projects");
+  $("#app").hidden = state.projects.length === 0;
+  $("#empty").hidden = state.projects.length > 0;
+  if (!state.projects.length) {
+    state.id = null;
+    $("#projBtnName").textContent = "—";
+    renderProjMenu();
+    return;
+  }
+  const pick = selectId && state.projects.some((p) => p.id === selectId) ? selectId : state.projects[0].id;
+  await openProject(pick);
+}
+
+function renderProjMenu() {
+  const m = $("#projMenu");
+  m.innerHTML = "";
+  for (const p of state.projects) {
+    const b = el("button", p.id === state.id ? "on" : "");
+    b.append(el("span", null, p.title), el("small", null, `${p.beats} nhịp`));
+    b.onclick = () => { closeProjMenu(); if (p.id !== state.id) openProject(p.id).catch(fail); };
+    m.append(b);
+  }
+  m.append(el("div", "sep"));
+  const nb = el("button", null, "+  Dự án mới");
+  nb.onclick = () => { closeProjMenu(); askNewProject(); };
+  m.append(nb);
+  if (state.id) {
+    const db = el("button", "danger", "Xoá dự án này");
+    db.onclick = () => { closeProjMenu(); deleteProject().catch(fail); };
+    m.append(db);
+  }
+}
+
+function closeProjMenu() {
+  $("#projMenu").hidden = true;
+  $("#projBtn").setAttribute("aria-expanded", "false");
+}
+
+async function openProject(id) {
+  const { project } = await api(`/api/projects/${id}`);
+  state.id = id;
+  state.project = project;
+  state.stamp = Date.now();
+  state.mediaMeta = {};
+  for (const [key, m] of Object.entries(project.media ?? {})) {
+    state.mediaMeta[key] = { kind: m.kind, thumb: `assets/media/${key}-thumb.jpg` };
+  }
+  $("#projBtnName").textContent = project.title;
+  renderProjMenu();
+  setSaveState("", "");
+  renderAll();
+}
+
+async function deleteProject() {
+  if (!confirm(`Xoá hẳn dự án “${state.project.title}” cùng toàn bộ file của nó?`)) return;
+  await api(`/api/projects/${state.id}`, { method: "DELETE" });
+  state.id = null;
+  await refreshProjects();
+  toast("Đã xoá dự án.");
+}
+
+function askNewProject() {
+  $("#newTitle").value = "Bản tin " + new Date().toLocaleDateString("vi-VN");
+  $("#newDlg").showModal();
+  $("#newTitle").select();
+}
+
+// ───────────────────────────────────────────── thư viện media
+
+function renderMedia() {
+  const grid = $("#mediaGrid");
+  grid.innerHTML = "";
+  const entries = Object.entries(state.project.media ?? {});
+  $("#mediaCount").textContent = String(entries.length);
+
+  for (const [key, m] of entries) {
+    const item = el("div", "media-item");
+    item.draggable = true;
+    item.dataset.key = key;
+    item.title = "Kéo thả vào một nhịp để dùng";
+
+    const img = el("img");
+    img.src = fileUrl(`assets/media/${key}-thumb.jpg`);
+    img.alt = "";
+    img.onerror = () => img.remove();
+    item.append(img, el("span", "tag", m.kind === "video" ? "VIDEO" : "ẢNH"));
+
+    const del = el("button", "del");
+    del.append(icon(ICON.x));
+    del.title = "Xoá khỏi thư viện";
+    del.onclick = (e) => {
+      e.stopPropagation();
+      const used = state.project.beats.filter((b) => b.mediaKey === key).length;
+      if (used && !confirm(`${used} nhịp đang dùng media này. Vẫn xoá?`)) return;
+      delete state.project.media[key];
+      for (const b of state.project.beats) if (b.mediaKey === key) b.mediaKey = "";
+      renderAll(); touch();
+    };
+    item.append(del);
+
+    item.ondragstart = (e) => {
+      e.dataTransfer.setData("text/media-key", key);
+      e.dataTransfer.effectAllowed = "copy";
+    };
+    grid.append(item);
+  }
+}
+
+async function addFiles(files) {
+  if (!files.length) return;
+  const fd = new FormData();
+  for (const f of files) fd.append("files", f);
+  toast(`Đang nạp ${files.length} file…`);
+  const { added } = await api(`/api/projects/${state.id}/media`, { method: "POST", body: fd });
+  applyAdded(added);
+}
+
+function applyAdded(added) {
+  let ok = 0;
+  for (const a of added) {
+    if (a.error) { fail(a.error); continue; }
+    state.project.media[a.key] = {
+      src: a.src, kind: a.kind, position: "50% 50%", mediaStartSec: 0, useSourceAudio: false,
+    };
+    state.mediaMeta[a.key] = a;
+    ok++;
+    // nhịp nào chưa có media thì gán luôn cái vừa thêm
+    const orphan = state.project.beats.find((b) => !b.mediaKey);
+    if (orphan) orphan.mediaKey = a.key;
+  }
+  state.stamp = Date.now();
+  renderAll();
+  touch();
+  if (ok) toast(`Đã thêm ${ok} media.`, "ok");
+}
+
+// ───────────────────────────────────────────── kịch bản
+
+function nextBeatId() {
+  const used = new Set(state.project.beats.map((b) => b.id));
+  let n = 1;
+  while (used.has("b" + n)) n++;
+  return "b" + n;
+}
+
+function newBeat(text = "") {
+  const beats = state.project.beats;
+  return {
+    id: nextBeatId(),
+    mediaKey: beats.at(-1)?.mediaKey ?? Object.keys(state.project.media ?? {})[0] ?? "",
+    kind: "beat",
+    text,
+    date: "",
+    headline: [],
+    vo: text,
+  };
+}
+
+function renderBeats() {
+  const list = $("#beatList");
+  list.innerHTML = "";
+  const beats = state.project.beats;
+
+  if (!beats.length) {
+    const box = el("div", "card card--static");
+    const body = el("div", "card-body");
+    body.style.padding = "30px 18px";
+    body.append(el("p", "note", "Chưa có nhịp nào. Bấm “Dán văn bản” để tách nhanh cả bài, hoặc “+ Thêm nhịp”."));
+    box.append(body);
+    list.append(box);
+    return;
+  }
+
+  beats.forEach((b, i) => {
+    const prev = i > 0 ? beats[i - 1] : null;
+    const chained = prev && b.mediaKey && prev.mediaKey === b.mediaKey;
+
+    const card = el("div", "beat" + (b.kind === "title" ? " is-title" : ""));
+
+    // ── đầu thẻ ──────────────────────────────────────
+    const head = el("div", "beat-head");
+
+    const grip = el("div", "beat-grip");
+    grip.append(icon(ICON.grip));
+    grip.title = "Kéo để đổi thứ tự";
+    grip.draggable = true;
+    grip.ondragstart = (e) => {
+      e.dataTransfer.setData("text/beat-index", String(i));
+      e.dataTransfer.effectAllowed = "move";
+      card.classList.add("dragging");
+    };
+    grip.ondragend = () => card.classList.remove("dragging");
+    head.append(grip, el("span", "beat-no", String(i + 1)));
+
+    const kindSel = el("select");
+    for (const [v, t] of [["beat", "Khối chữ"], ["title", "Card mở đầu"]]) {
+      const o = el("option", null, t);
+      o.value = v;
+      kindSel.append(o);
+    }
+    kindSel.value = b.kind;
+    kindSel.onchange = () => { b.kind = kindSel.value; renderBeats(); touch(); };
+    head.append(kindSel);
+
+    if (chained) {
+      const tag = el("span", "tagline", "↳ nối cảnh trên");
+      tag.title = "Dùng chung media với nhịp trước nên hình chạy liên tục, không giật lại";
+      head.append(tag);
+    }
+    head.append(el("div", "spacer"));
+
+    const iconBtn = (d, title, fn, danger) => {
+      const bt = el("button", "btn btn--icon" + (danger ? " danger" : ""));
+      bt.append(icon(d));
+      bt.title = title;
+      bt.onclick = fn;
+      return bt;
+    };
+    head.append(
+      iconBtn(ICON.up, "Lên", () => {
+        if (!i) return;
+        [beats[i - 1], beats[i]] = [beats[i], beats[i - 1]];
+        renderBeats(); touch();
+      }),
+      iconBtn(ICON.down, "Xuống", () => {
+        if (i === beats.length - 1) return;
+        [beats[i + 1], beats[i]] = [beats[i], beats[i + 1]];
+        renderBeats(); touch();
+      }),
+      iconBtn(ICON.copy, "Nhân đôi", () => {
+        const clone = structuredClone(b);
+        clone.id = nextBeatId();
+        delete clone.voDurationSec;
+        delete clone.startSec;
+        beats.splice(i + 1, 0, clone);
+        renderBeats(); touch();
+      }),
+      iconBtn(ICON.trash, "Xoá nhịp", () => {
+        beats.splice(i, 1);
+        renderBeats(); touch();
+      }, true),
+    );
+    card.append(head);
+
+    // thả nhịp khác lên thẻ này để đổi thứ tự
+    card.ondragover = (e) => {
+      if (![...e.dataTransfer.types].includes("text/beat-index")) return;
+      e.preventDefault();
+      card.classList.add("drag-over");
+    };
+    card.ondragleave = () => card.classList.remove("drag-over");
+    card.ondrop = (e) => {
+      card.classList.remove("drag-over");
+      const from = e.dataTransfer.getData("text/beat-index");
+      if (from === "") return;
+      e.preventDefault();
+      const f = Number(from);
+      if (f === i) return;
+      const [moved] = beats.splice(f, 1);
+      beats.splice(i, 0, moved);
+      renderBeats(); touch();
+    };
+
+    // ── thân thẻ ─────────────────────────────────────
+    const body = el("div", "beat-body");
+
+    const meta = state.mediaMeta[b.mediaKey];
+    const thumb = el("div", "beat-thumb" + (meta ? " has-media" : ""));
+    if (meta) {
+      const img = el("img");
+      img.src = fileUrl(meta.thumb ?? `assets/media/${b.mediaKey}-thumb.jpg`);
+      img.alt = "";
+      img.onerror = () => {
+        thumb.classList.remove("has-media");
+        thumb.textContent = "không đọc được ảnh";
+      };
+      thumb.append(img, el("span", "kindtag", meta.kind === "video" ? "VIDEO" : "ẢNH"));
+    } else {
+      thumb.textContent = "Kéo media vào đây";
+    }
+    thumb.title = "Kéo media từ thư viện thả vào, hoặc bấm để đổi sang media kế tiếp";
+    thumb.onclick = () => cycleMedia(b);
+    thumb.ondragover = (e) => { e.preventDefault(); thumb.classList.add("drag-over"); };
+    thumb.ondragleave = () => thumb.classList.remove("drag-over");
+    thumb.ondrop = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      thumb.classList.remove("drag-over");
+      const key = e.dataTransfer.getData("text/media-key");
+      if (key) { b.mediaKey = key; renderBeats(); touch(); }
+    };
+    body.append(thumb);
+
+    const fields = el("div", "beat-fields");
+    const sync = el("input");
+    sync.type = "checkbox";
+
+    let textArea = null;
+    if (b.kind === "title") {
+      const d = el("input");
+      d.type = "text";
+      d.placeholder = "Ngày, ví dụ 25/9/2026";
+      d.value = b.date ?? "";
+      d.oninput = () => { b.date = d.value; touch(); };
+      fields.append(el("div", "sub-label", "Ngày"), d);
+
+      const h = autoGrow(el("textarea"), 2);
+      h.placeholder = "Mỗi dòng ở đây là một dòng tiêu đề trên màn hình";
+      h.value = (b.headline ?? []).join("\n");
+      h.oninput = () => { b.headline = h.value.split("\n").filter((x) => x.trim()); touch(); };
+      fields.append(el("div", "sub-label", "Tiêu đề"), h);
+    } else {
+      textArea = autoGrow(el("textarea"), 2);
+      textArea.placeholder = "Chữ hiện trên màn hình…";
+      textArea.value = b.text ?? "";
+      fields.append(el("div", "sub-label", "Chữ hiển thị"), textArea);
+    }
+
+    const vo = autoGrow(el("textarea"), 2);
+    vo.placeholder = "Câu đọc — nên viết số ra chữ, ví dụ 26/9 → hai mươi sáu tháng chín";
+    vo.value = b.vo ?? "";
+    vo.oninput = () => {
+      b.vo = vo.value;
+      delete b.voDurationSec;
+      touch();
+    };
+    const voLabel = el("div", "sub-label", "Giọng đọc");
+    fields.append(voLabel, vo);
+
+    if (textArea) {
+      sync.checked = (b.text ?? "") === (b.vo ?? "");
+      // Trùng nhau thì giấu ô giọng đọc đi cho thẻ gọn; bỏ tick là hiện lại.
+      const syncView = () => {
+        voLabel.hidden = sync.checked;
+        vo.hidden = sync.checked;
+        if (!sync.checked) vo.fit();
+      };
+      syncView();
+      textArea.oninput = () => {
+        b.text = textArea.value;
+        if (sync.checked) {
+          b.vo = textArea.value;
+          vo.value = textArea.value;
+          delete b.voDurationSec;
+        }
+        touch();
+      };
+      sync.onchange = () => {
+        if (sync.checked) {
+          b.vo = b.text ?? "";
+          vo.value = b.vo;
+          delete b.voDurationSec;
+          touch();
+        }
+        syncView();
+      };
+    }
+
+    const foot = el("div", "beat-foot");
+    if (textArea) {
+      const lb = el("label", "inline");
+      lb.append(sync, document.createTextNode("giọng đọc giống chữ hiển thị"));
+      foot.append(lb);
+    }
+    if (b.voDurationSec) foot.append(el("span", "stat", `${b.voDurationSec.toFixed(2)}s`));
+    if (b.startSec != null) foot.append(el("span", "stat", `bắt đầu ${b.startSec.toFixed(2)}s`));
+
+    foot.append(el("div", "spacer"));
+    const hear = el("button", "btn btn--soft btn--sm", "Nghe thử");
+    hear.onclick = async () => {
+      if (!(b.vo ?? "").trim()) return fail("Nhịp này chưa có câu đọc.");
+      hear.disabled = true;
+      try { await speak(b.vo); } catch (e) { fail(e); }
+      finally { hear.disabled = false; }
+    };
+    foot.append(hear);
+    fields.append(foot);
+
+    body.append(fields);
+    card.append(body);
+    list.append(card);
+  });
+}
+
+/** Bấm vào thumbnail để xoay vòng qua các media trong thư viện. */
+function cycleMedia(beat) {
+  const keys = Object.keys(state.project.media ?? {});
+  if (!keys.length) return toast("Thư viện chưa có media — thêm ảnh hoặc video trước.");
+  const cur = keys.indexOf(beat.mediaKey);
+  beat.mediaKey = keys[(cur + 1) % keys.length];
+  renderBeats();
+  touch();
+}
+
+// ───────────────────────────────────────────── cài đặt chung
+
+function renderSettings() {
+  const p = state.project;
+  $("#sourceLabel").value = p.brand.sourceLabel;
+  $("#voiceRate").value = p.voice.rate;
+  $("#voiceId").value = p.voice.voiceId;
+  $("#outroInfo").textContent = p.outro.src
+    ? `Đang dùng ${p.outro.src} — ${p.outro.durationSec}s`
+    : "Chưa có outro. Video sẽ kết thúc ngay ở nhịp cuối.";
+
+  const bp = $("#badgePreview");
+  bp.hidden = false;
+  bp.onerror = () => { bp.hidden = true; };
+  bp.src = fileUrl(p.brand.badgeSrc);
+
+  const chip = $("#durChip");
+  if (p.totalSec) {
+    chip.hidden = false;
+    chip.textContent = `${p.totalSec.toFixed(1)}s`;
+  } else {
+    chip.hidden = true;
+  }
+}
+
+const renderAll = () => { renderMedia(); renderBeats(); renderSettings(); };
+
+// ───────────────────────────────────────────── job + tiến trình
+
+const STEP_ORDER = ["tts", "compose", "check", "render"];
+
+function resetSteps() {
+  for (const li of $$("#steps li")) li.className = "";
+  const bar = $("#jobBar");
+  bar.style.width = "0";
+  bar.className = "";
+  $("#jobLog").textContent = "";
+}
+
+function markStep(name, cls) {
+  const at = STEP_ORDER.indexOf(name);
+  if (at < 0) return;
+  for (const s of STEP_ORDER.slice(0, at)) {
+    const p = $(`#steps li[data-step="${s}"]`);
+    if (p && !p.classList.contains("err")) p.className = "ok";
+  }
+  $(`#steps li[data-step="${name}"]`).className = cls;
+  $("#jobBar").style.width = ((at + (cls === "ok" ? 1 : 0.45)) / STEP_ORDER.length) * 100 + "%";
+}
+
+/** Đoán bước đang chạy từ dòng log của pipeline. */
+function sniffStep(line) {
+  if (/^\[tts\]/.test(line)) markStep("tts", "run");
+  else if (/^\[timeline\]|^\[compose\]/.test(line)) markStep("compose", "run");
+  else if (/Chạy kiểm tra|^Lint|^Runtime|^Layout|^Contrast|Check passed/i.test(line)) markStep("check", "run");
+  else if (/render|frame|ffmpeg|encod/i.test(line)) markStep("render", "run");
+}
+
+function setBusy(on) {
+  for (const b of [$("#btnRender"), $("#btnPreview"), $("#btnPreviewStop")]) b.disabled = on;
+}
+
+function runJob(url, label, lastStep) {
+  $("#jobState").textContent = label + "…";
+  $("#jobState").className = "jobstate run";
+  setBusy(true);
+
+  return api(url, { method: "POST" })
+    .then(({ jobId }) => new Promise((resolve, reject) => {
+      const es = new EventSource(`/api/jobs/${jobId}/stream`);
+      es.onmessage = (e) => {
+        const d = JSON.parse(e.data);
+        if (d.line) {
+          const log = $("#jobLog");
+          log.textContent += d.line + "\n";
+          log.scrollTop = log.scrollHeight;
+          sniffStep(d.line);
+        }
+        if (d.state === "done") {
+          es.close();
+          if (lastStep) markStep(lastStep, "ok");
+          $("#jobBar").style.width = "100%";
+          $("#jobState").textContent = label + " xong";
+          $("#jobState").className = "jobstate ok";
+          resolve(d.result);
+        } else if (d.state === "error") {
+          es.close();
+          for (const li of $$("#steps li.run")) li.className = "err";
+          $("#jobBar").className = "err";
+          $("#jobState").textContent = label + " lỗi";
+          $("#jobState").className = "jobstate err";
+          $("#logBox").open = true;
+          reject(new Error(d.error));
+        }
+      };
+      es.onerror = () => { es.close(); reject(new Error("Mất kết nối tới tiến trình.")); };
+    }))
+    .finally(() => setBusy(false));
+}
+
+// ───────────────────────────────────────────── nghe thử giọng
+
+async function speak(text) {
+  await api(`/api/projects/${state.id}/voice-preview`, {
+    method: "POST",
+    body: JSON.stringify({ text, voiceId: $("#voiceId").value, rate: $("#voiceRate").value }),
+  });
+  const a = $("#voiceAudio");
+  a.src = `/api/projects/${state.id}/file/assets/preview/voice-preview.mp3?t=${Date.now()}`;
+  a.hidden = false;
+  await a.play().catch(() => {});
+}
+
+// ═════════════════════════════════════════ gắn sự kiện ════════════════════
+
+// thẻ gập ở cột trái
+for (const head of $$(".card-head[data-toggle]")) {
+  head.onclick = () => head.closest(".card").classList.toggle("is-open");
+}
+
+// menu chọn dự án
+$("#projBtn").onclick = (e) => {
+  e.stopPropagation();
+  const m = $("#projMenu");
+  m.hidden = !m.hidden;
+  $("#projBtn").setAttribute("aria-expanded", String(!m.hidden));
+};
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".proj-switch")) closeProjMenu();
+});
+
+// dự án mới
+$("#btnFirst").onclick = askNewProject;
+$("#newCancel").onclick = (e) => { e.preventDefault(); $("#newDlg").close(); };
+$("#newOk").onclick = async (e) => {
+  e.preventDefault();
+  const title = $("#newTitle").value.trim();
+  if (!title) return;
+  $("#newDlg").close();
+  try {
+    const { id } = await api("/api/projects", { method: "POST", body: JSON.stringify({ title }) });
+    await refreshProjects(id);
+    toast("Đã tạo dự án.", "ok");
+  } catch (x) { fail(x); }
+};
+
+// thêm media từ hộp chọn file
+$("#btnUpload").onclick = () => $("#fileInput").click();
+$("#fileInput").onchange = async (e) => {
+  await addFiles([...e.target.files]).catch(fail);
+  e.target.value = "";
+};
+
+// kéo thả file vào cả cửa sổ
+let dragDepth = 0;
+const hasFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes("Files");
+window.addEventListener("dragenter", (e) => {
+  if (!hasFiles(e) || !state.id) return;
+  dragDepth++;
+  $("#dropveil").hidden = false;
+});
+window.addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
+window.addEventListener("dragleave", () => {
+  if (--dragDepth <= 0) { dragDepth = 0; $("#dropveil").hidden = true; }
+});
+window.addEventListener("drop", async (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  $("#dropveil").hidden = true;
+  if (!state.id) return fail("Tạo dự án trước đã.");
+  await addFiles([...e.dataTransfer.files]).catch(fail);
+});
+
+// vùng thả riêng trong cột trái (đổi màu khi rê qua)
+const dz = $("#dropzone");
+dz.addEventListener("dragover", (e) => { if (hasFiles(e)) { e.preventDefault(); dz.classList.add("hot"); } });
+dz.addEventListener("dragleave", () => dz.classList.remove("hot"));
+dz.addEventListener("drop", () => dz.classList.remove("hot"));
+
+// thêm nhịp
+$("#btnAddBeat").onclick = () => {
+  state.project.beats.push(newBeat());
+  renderBeats();
+  touch();
+  $("#beatList").lastElementChild?.querySelector("textarea")?.focus();
+};
+
+// dán văn bản → tách thành nhịp
+$("#btnPasteText").onclick = () => {
+  $("#pasteText").value = "";
+  $("#pasteDlg").showModal();
+  $("#pasteText").focus();
+};
+$("#pasteCancel").onclick = (e) => { e.preventDefault(); $("#pasteDlg").close(); };
+$("#pasteOk").onclick = async (e) => {
+  e.preventDefault();
+  const text = $("#pasteText").value.trim();
+  if (!text) return;
+  try {
+    const { beats } = await api("/api/split-text", { method: "POST", body: JSON.stringify({ text }) });
+    if (!beats.length) return fail("Không tách được nhịp nào từ đoạn này.");
+    if ($("#pasteReplace").checked) state.project.beats = [];
+    for (const t of beats) state.project.beats.push(newBeat(t));
+    $("#pasteDlg").close();
+    renderBeats();
+    touch();
+    toast(`Đã tạo ${beats.length} nhịp.`, "ok");
+  } catch (x) { fail(x); }
+};
+
+// cài đặt chung
+$("#sourceLabel").oninput = (e) => { state.project.brand.sourceLabel = e.target.value; touch(); };
+$("#voiceRate").onchange = (e) => { state.project.voice.rate = e.target.value; invalidateVo(); touch(); };
+$("#voiceId").onchange = (e) => { state.project.voice.voiceId = e.target.value; invalidateVo(); touch(); };
+
+/** Đổi giọng hoặc tốc độ thì mọi độ dài đã đo không còn đúng nữa. */
+function invalidateVo() {
+  for (const b of state.project.beats) delete b.voDurationSec;
+  renderBeats();
+}
+
+$("#btnVoiceTest").onclick = async () => {
+  const text = $("#voiceTest").value.trim() || state.project.beats.find((b) => b.vo)?.vo;
+  if (!text) return fail("Nhập một câu để nghe thử.");
+  $("#btnVoiceTest").disabled = true;
+  try { await speak(text); } catch (e) { fail(e); }
+  finally { $("#btnVoiceTest").disabled = false; }
+};
+
+$("#btnBadge").onclick = () => $("#badgeInput").click();
+$("#badgeInput").onchange = async (e) => {
+  if (!e.target.files[0]) return;
+  const fd = new FormData();
+  fd.append("file", e.target.files[0]);
+  try {
+    const r = await api(`/api/projects/${state.id}/badge`, { method: "POST", body: fd });
+    if (r.size) {
+      state.project.brand.badgeWidth = r.size.width;
+      state.project.brand.badgeHeight = r.size.height;
+    }
+    state.stamp = Date.now();
+    renderSettings();
+    touch();
+    toast("Đã đổi logo.", "ok");
+  } catch (x) { fail(x); }
+  e.target.value = "";
+};
+
+$("#btnOutro").onclick = () => $("#outroInput").click();
+$("#outroInput").onchange = async (e) => {
+  if (!e.target.files[0]) return;
+  const fd = new FormData();
+  fd.append("file", e.target.files[0]);
+  try {
+    const r = await api(`/api/projects/${state.id}/outro`, { method: "POST", body: fd });
+    state.project.outro = { src: r.src, durationSec: r.durationSec };
+    renderSettings();
+    touch();
+    toast(`Đã gắn outro ${r.durationSec}s.`, "ok");
+  } catch (x) { fail(x); }
+  e.target.value = "";
+};
+
+// lấy nội dung từ bài báo
+$("#btnExtract").onclick = async () => {
+  const url = $("#articleUrl").value.trim();
+  if (!url) return;
+  $("#btnExtract").disabled = true;
+  try {
+    showExtract(await api("/api/extract", { method: "POST", body: JSON.stringify({ url }) }));
+  } catch (e) {
+    fail("Không lấy được bài: " + e.message);
+  } finally {
+    $("#btnExtract").disabled = false;
+  }
+};
+
+function showExtract(ex) {
+  const box = $("#extractOut");
+  box.hidden = false;
+  box.innerHTML = "";
+  box.append(el("h4", null, ex.title || "(không có tiêu đề)"));
+  box.append(el("p", "note",
+    `${ex.siteName || "?"} · ${ex.date || "không rõ ngày"} · ${ex.images.length} ảnh · ${ex.suggestedBeats.length} câu`));
+
+  const picked = new Set();
+  const imgs = el("div", "imgs");
+  for (const im of ex.images) {
+    const t = el("img");
+    t.src = im.url;
+    t.alt = "";
+    t.title = im.caption || im.url;
+    t.onclick = () => {
+      t.classList.toggle("sel");
+      if (picked.has(im.url)) picked.delete(im.url);
+      else picked.add(im.url);
+    };
+    imgs.append(t);
+  }
+  box.append(imgs);
+
+  const btnImgs = el("button", "btn btn--soft btn--sm btn--wide", "Tải ảnh đã chọn về thư viện");
+  btnImgs.onclick = async () => {
+    if (!picked.size) return toast("Chưa chọn ảnh nào.");
+    btnImgs.disabled = true;
+    try {
+      const { added } = await api(`/api/projects/${state.id}/media-from-url`, {
+        method: "POST", body: JSON.stringify({ urls: [...picked] }),
+      });
+      applyAdded(added);
+    } catch (e) { fail(e); }
+    finally { btnImgs.disabled = false; }
+  };
+  box.append(btnImgs);
+
+  const btnTitle = el("button", "btn btn--soft btn--sm btn--wide", "Dùng tiêu đề làm card mở đầu");
+  btnTitle.style.marginTop = "7px";
+  btnTitle.onclick = () => {
+    let t0 = state.project.beats.find((b) => b.kind === "title");
+    if (!t0) {
+      t0 = newBeat();
+      state.project.beats.unshift(t0);
+    }
+    t0.kind = "title";
+    t0.date = ex.date;
+    t0.headline = (ex.title || "").toUpperCase().split(/:\s*/).slice(0, 2);
+    t0.vo = ex.title;
+    renderBeats();
+    touch();
+    toast("Đã đặt card mở đầu.", "ok");
+  };
+  box.append(btnTitle);
+
+  box.append(el("p", "note", "Bấm một câu để thêm thành nhịp:"));
+  const ol = el("ol");
+  for (const t of ex.suggestedBeats) {
+    const li = el("li", null, t);
+    li.onclick = () => {
+      state.project.beats.push(newBeat(t));
+      li.classList.add("used");
+      renderBeats();
+      touch();
+    };
+    ol.append(li);
+  }
+  box.append(ol);
+}
+
+// duyệt thư mục trong máy
+$("#btnBrowse").onclick = async () => {
+  $("#browseDlg").showModal();
+  await browse("").catch(fail);
+};
+$("#browseClose").onclick = (e) => { e.preventDefault(); $("#browseDlg").close(); };
+$("#browseGo").onclick = () => browse($("#browsePath").value).catch(fail);
+$("#browsePath").onkeydown = (e) => {
+  if (e.key === "Enter") { e.preventDefault(); browse($("#browsePath").value).catch(fail); }
+};
+
+async function browse(dir) {
+  const r = await api(`/api/browse?dir=${encodeURIComponent(dir)}`);
+  $("#browsePath").value = r.dir;
+  const list = $("#browseList");
+  list.innerHTML = "";
+
+  const up = el("div");
+  up.append(icon(ICON.up), el("span", null, ".."));
+  up.onclick = () => browse(r.parent).catch(fail);
+  list.append(up);
+
+  for (const f of r.folders) {
+    const d = el("div");
+    d.append(icon(ICON.folder), el("span", null, f));
+    d.onclick = () => browse(r.dir + "\\" + f).catch(fail);
+    list.append(d);
+  }
+  for (const f of r.files) {
+    const d = el("div");
+    d.append(icon(ICON.file), el("span", null, f));
+    d.onclick = async () => {
+      d.style.opacity = ".5";
+      try {
+        const { added } = await api(`/api/projects/${state.id}/media-from-path`, {
+          method: "POST", body: JSON.stringify({ filePath: r.dir + "\\" + f }),
+        });
+        applyAdded(added);
+      } catch (e) { fail(e); }
+      finally { d.style.opacity = "1"; }
+    };
+    list.append(d);
+  }
+}
+
+// xem trước trong HyperFrames Studio
+$("#btnPreview").onclick = async () => {
+  try {
+    resetSteps();
+    await saveProject();
+    await runJob(`/api/projects/${state.id}/build`, "Dựng", "check");
+    await openProject(state.id);
+    const r = await runJob(`/api/projects/${state.id}/preview`, "Mở xem trước");
+    $("#btnPreviewStop").hidden = false;
+    if (r?.url) window.open(r.url, "_blank");
+    else toast("Đã bật xem trước — xem nhật ký để lấy địa chỉ.");
+  } catch (e) { fail(e); }
+};
+
+$("#btnPreviewStop").onclick = async () => {
+  try {
+    await runJob(`/api/projects/${state.id}/preview-stop`, "Dừng xem trước");
+    $("#btnPreviewStop").hidden = true;
+  } catch (e) { fail(e); }
+};
+
+// render ra MP4
+$("#btnRender").onclick = async () => {
+  const p = state.project;
+  if (!p.beats.length) return fail("Chưa có nhịp nào.");
+  const noMedia = p.beats.filter((b) => !b.mediaKey).length;
+  if (noMedia && !confirm(`${noMedia} nhịp chưa gán ảnh hoặc video. Vẫn tạo video?`)) return;
+
+  try {
+    resetSteps();
+    await saveProject();
+    await runJob(`/api/projects/${state.id}/build`, "Dựng", "check");
+    await openProject(state.id);
+    const r = await runJob(`/api/projects/${state.id}/render`, "Render", "render");
+
+    $("#resultPanel").hidden = false;
+    $("#resultVideo").src = r.url;
+    $("#resultInfo").textContent = r.durationSec ? `${r.durationSec.toFixed(2)} giây · ${r.file}` : r.file;
+    $("#resultPath").textContent = r.absolutePath;
+    $("#btnReveal").onclick = () =>
+      api("/api/reveal", { method: "POST", body: JSON.stringify({ absolutePath: r.absolutePath }) })
+        .catch(fail);
+    $("#resultPanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    toast("Video đã xong.", "ok");
+  } catch (e) { fail(e); }
+};
+
+// phím tắt Ctrl+S
+window.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    saveProject().then(() => toast("Đã lưu.", "ok")).catch(fail);
+  }
+});
+
+// còn thay đổi chưa kịp lưu thì hỏi lại trước khi đóng tab
+window.addEventListener("beforeunload", (e) => {
+  if ($("#saveState").classList.contains("saving")) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
+
+// ───────────────────────────────────────────── khởi động
+
+(async function init() {
+  try {
+    const voices = await api("/api/voices");
+    const sel = $("#voiceId");
+    for (const v of voices) {
+      const o = el("option", null, v.label);
+      o.value = v.id;
+      sel.append(o);
+    }
+    await refreshProjects();
+  } catch (e) {
+    fail(e);
+  }
+})();

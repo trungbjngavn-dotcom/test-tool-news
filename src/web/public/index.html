@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Video Studio — Bản tin dọc</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<!-- ══════════════════════════════ thanh trên ══════════════════════════════ -->
+<header class="topbar">
+  <div class="logo">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="13" height="16" rx="3"/><path d="M18 9.6l3.2-1.9v8.6L18 14.4z"/></svg>
+    <span>Video Studio</span>
+  </div>
+
+  <div class="proj-switch">
+    <button id="projBtn" class="chip" aria-haspopup="listbox" aria-expanded="false">
+      <span id="projBtnName">—</span>
+      <svg class="caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div id="projMenu" class="menu" role="listbox" hidden></div>
+  </div>
+
+  <span id="saveState" class="savestate">&nbsp;</span>
+
+  <div class="grow"></div>
+
+  <span id="durChip" class="chip chip--quiet" hidden></span>
+  <button id="btnPreview" class="btn btn--ghost">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+    Xem trước
+  </button>
+  <button id="btnPreviewStop" class="btn btn--ghost" hidden>Dừng xem trước</button>
+  <button id="btnRender" class="btn btn--primary">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+    Tạo video
+  </button>
+</header>
+
+<!-- ══════════════════════════════ khung chính ══════════════════════════════ -->
+<main id="app" hidden>
+
+  <!-- ─────────── cột trái: thư viện + cài đặt ─────────── -->
+  <aside class="rail rail--left">
+
+    <section class="card is-open">
+      <button class="card-head" data-toggle>
+        <h2>Ảnh &amp; video</h2>
+        <span id="mediaCount" class="pill">0</span>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="card-body">
+        <div id="dropzone" class="dropzone">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L8 8m4-4l4 4"/><path d="M4 16v2.5A1.5 1.5 0 005.5 20h13a1.5 1.5 0 001.5-1.5V16"/></svg>
+          <p><strong>Kéo thả file vào đây</strong></p>
+          <div class="dz-actions">
+            <button id="btnUpload" class="btn btn--soft btn--sm">Chọn file…</button>
+            <button id="btnBrowse" class="btn btn--soft btn--sm">Duyệt thư mục máy…</button>
+          </div>
+        </div>
+        <input id="fileInput" type="file" accept="image/*,video/*" multiple hidden />
+        <div id="mediaGrid" class="media-grid"></div>
+        <p class="note">Ảnh tự động zoom chậm (Ken Burns). Video chạy thật ở nửa trên.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <button class="card-head" data-toggle>
+        <h2>Giọng đọc</h2>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="card-body">
+        <label class="field">
+          <span>Giọng</span>
+          <select id="voiceId"></select>
+        </label>
+        <label class="field">
+          <span>Tốc độ</span>
+          <select id="voiceRate">
+            <option value="-10%">Chậm</option>
+            <option value="+0%">Bình thường</option>
+            <option value="+15%">Hơi nhanh</option>
+            <option value="+25%">Nhanh (kiểu bản tin)</option>
+          </select>
+        </label>
+        <div class="inline-form">
+          <input id="voiceTest" type="text" placeholder="Câu để nghe thử…" />
+          <button id="btnVoiceTest" class="btn btn--soft btn--sm">Nghe thử</button>
+        </div>
+        <audio id="voiceAudio" controls hidden></audio>
+      </div>
+    </section>
+
+    <section class="card">
+      <button class="card-head" data-toggle>
+        <h2>Thương hiệu &amp; outro</h2>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="card-body">
+        <label class="field">
+          <span>Dòng nguồn</span>
+          <input id="sourceLabel" type="text" />
+        </label>
+        <div class="stack">
+          <img id="badgePreview" class="badge-preview" alt="Logo hiện tại" hidden />
+          <button id="btnBadge" class="btn btn--soft btn--sm">Đổi logo (PNG trong suốt)…</button>
+          <input id="badgeInput" type="file" accept="image/png" hidden />
+        </div>
+        <div class="stack">
+          <button id="btnOutro" class="btn btn--soft btn--sm">Chọn clip outro…</button>
+          <input id="outroInput" type="file" accept="video/*" hidden />
+          <p id="outroInfo" class="note"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <button class="card-head" data-toggle>
+        <h2>Lấy từ bài báo</h2>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="card-body">
+        <div class="inline-form">
+          <input id="articleUrl" type="url" placeholder="Dán link bài báo…" />
+          <button id="btnExtract" class="btn btn--soft btn--sm">Lấy</button>
+        </div>
+        <div id="extractOut" class="extract" hidden></div>
+      </div>
+    </section>
+  </aside>
+
+  <!-- ─────────── cột giữa: kịch bản ─────────── -->
+  <section class="stage">
+    <div class="stage-head">
+      <div class="stage-title">
+        <h1>Kịch bản</h1>
+        <p class="note">Mỗi nhịp là một khối chữ kèm một câu đọc. Các nhịp liền nhau dùng chung media sẽ nối thành một cảnh liên tục.</p>
+      </div>
+      <div class="stage-actions">
+        <button id="btnPasteText" class="btn btn--soft btn--sm">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6v3H9z"/><path d="M8 5.5H6.5A1.5 1.5 0 005 7v12a1.5 1.5 0 001.5 1.5h11A1.5 1.5 0 0019 19V7a1.5 1.5 0 00-1.5-1.5H16"/></svg>
+          Dán văn bản
+        </button>
+        <button id="btnAddBeat" class="btn btn--soft btn--sm">+ Thêm nhịp</button>
+      </div>
+    </div>
+    <div id="beatList" class="beats"></div>
+  </section>
+
+  <!-- ─────────── cột phải: tiến trình + kết quả ─────────── -->
+  <aside class="rail rail--right">
+    <section class="card card--static">
+      <div class="card-head card-head--plain"><h2>Tiến trình</h2></div>
+      <div class="card-body">
+        <ol id="steps" class="steps">
+          <li data-step="tts"><i></i>Sinh giọng đọc</li>
+          <li data-step="compose"><i></i>Dựng cảnh</li>
+          <li data-step="check"><i></i>Kiểm tra</li>
+          <li data-step="render"><i></i>Render MP4</li>
+        </ol>
+        <div id="jobState" class="jobstate">Chưa chạy</div>
+        <div class="bar"><div id="jobBar"></div></div>
+        <details id="logBox">
+          <summary>Nhật ký chi tiết</summary>
+          <pre id="jobLog" class="log"></pre>
+        </details>
+      </div>
+    </section>
+
+    <section class="card card--static" id="resultPanel" hidden>
+      <div class="card-head card-head--plain"><h2>Kết quả</h2></div>
+      <div class="card-body">
+        <video id="resultVideo" controls playsinline></video>
+        <p id="resultInfo" class="note"></p>
+        <button id="btnReveal" class="btn btn--soft btn--sm btn--wide">Mở thư mục chứa video</button>
+        <code id="resultPath" class="path"></code>
+      </div>
+    </section>
+  </aside>
+</main>
+
+<!-- ══════════════════════════════ trạng thái rỗng ══════════════════════════ -->
+<div id="empty" class="empty" hidden>
+  <div class="empty-art">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="13" height="16" rx="3"/><path d="M18 9.6l3.2-1.9v8.6L18 14.4z"/></svg>
+  </div>
+  <h2>Chưa có dự án nào</h2>
+  <p class="note">Tạo dự án, dán nội dung và chọn ảnh hoặc video từ máy — phần còn lại tự động.</p>
+  <button id="btnFirst" class="btn btn--primary">Tạo dự án đầu tiên</button>
+</div>
+
+<!-- ══════════════════════════════ hộp thoại ══════════════════════════════ -->
+<dialog id="newDlg" class="dlg">
+  <h3>Dự án mới</h3>
+  <label class="field"><span>Tên dự án</span><input id="newTitle" type="text" /></label>
+  <menu>
+    <button id="newCancel" class="btn btn--soft btn--sm">Huỷ</button>
+    <button id="newOk" class="btn btn--primary btn--sm">Tạo</button>
+  </menu>
+</dialog>
+
+<dialog id="pasteDlg" class="dlg dlg--wide">
+  <h3>Dán văn bản</h3>
+  <p class="note">Dán cả bài. Câu dài sẽ được cắt thành các nhịp vừa màn hình.</p>
+  <textarea id="pasteText" rows="12" placeholder="Dán nội dung ở đây…"></textarea>
+  <label class="inline"><input id="pasteReplace" type="checkbox" /> Thay toàn bộ nhịp hiện có</label>
+  <menu>
+    <button id="pasteCancel" class="btn btn--soft btn--sm">Huỷ</button>
+    <button id="pasteOk" class="btn btn--primary btn--sm">Tách thành nhịp</button>
+  </menu>
+</dialog>
+
+<dialog id="browseDlg" class="dlg dlg--wide">
+  <h3>Duyệt file trong máy</h3>
+  <div class="inline-form">
+    <input id="browsePath" type="text" />
+    <button id="browseGo" class="btn btn--soft btn--sm">Đi</button>
+  </div>
+  <div id="browseList" class="browse"></div>
+  <menu><button id="browseClose" class="btn btn--soft btn--sm">Đóng</button></menu>
+</dialog>
+
+<div id="toasts" class="toasts"></div>
+<div id="dropveil" class="dropveil" hidden><span>Thả file để thêm vào thư viện</span></div>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>
