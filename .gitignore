@@ -10,3 +10,6 @@ debug-lucylab.ts
 
 # Big SFX library (downloaded by `npm run sfx:download` — too large to commit)
 SFX/
+
+# Anh xem truoc cua hop thoai duyet file (tai tao duoc)
+.cache/

@@ -140,15 +140,11 @@ export async function extractArticle(pageUrl: string): Promise<Extracted> {
   };
 }
 
-/**
- * Cắt một đoạn văn dài thành câu ngắn vừa khung chữ (~140 ký tự).
- * Cắt theo ranh giới câu để không vỡ nghĩa.
- */
-export function splitToBeatText(paragraph: string, maxLen = 140): string[] {
-  const sentences = paragraph.split(/(?<=[.!?])\s+/);
+/** Gom các mẩu lại thành khối không vượt quá maxLen. */
+function pack(pieces: string[], maxLen: number): string[] {
   const out: string[] = [];
   let buf = "";
-  for (const s of sentences) {
+  for (const s of pieces) {
     if (!buf) buf = s;
     else if ((buf + " " + s).length <= maxLen) buf += " " + s;
     else {
@@ -157,5 +153,27 @@ export function splitToBeatText(paragraph: string, maxLen = 140): string[] {
     }
   }
   if (buf) out.push(buf);
-  return out.filter((t) => t.trim().length > 0);
+  return out;
+}
+
+/**
+ * Cắt một câu dài hơn khung chữ. Ưu tiên ranh giới mệnh đề (dấu phẩy, chấm
+ * phẩy, gạch ngang) cho đỡ vỡ nghĩa; câu nào không có dấu nào thì đành cắt
+ * theo từ — vẫn hơn là để chữ tràn ra ngoài panel.
+ */
+function splitLongSentence(sentence: string, maxLen: number): string[] {
+  if (sentence.length <= maxLen) return [sentence];
+  const byClause = pack(sentence.split(/(?<=[,;:—–])\s+/), maxLen);
+  return byClause.flatMap((p) => (p.length <= maxLen ? [p] : pack(p.split(/\s+/), maxLen)));
+}
+
+/**
+ * Cắt một đoạn văn dài thành các khối vừa khung chữ (~140 ký tự).
+ * Cắt theo ranh giới câu trước; câu nào tự nó đã quá dài thì cắt tiếp bên trong.
+ */
+export function splitToBeatText(paragraph: string, maxLen = 140): string[] {
+  const sentences = paragraph
+    .split(/(?<=[.!?])\s+/)
+    .flatMap((s) => splitLongSentence(s, maxLen));
+  return pack(sentences, maxLen).filter((t) => t.trim().length > 0);
 }

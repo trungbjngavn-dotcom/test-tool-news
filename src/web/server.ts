@@ -51,9 +51,27 @@ function safeJoin(base: string, rel: string): string {
   return p;
 }
 
+/** Lỗi có kèm mã HTTP để trình duyệt phân biệt "không có" với "hỏng". */
+class HttpError extends Error {
+  constructor(public statusCode: number, message: string) {
+    super(message);
+  }
+}
+
 async function loadProject(id: string): Promise<Project> {
-  const raw = await readFile(path.join(dirOf(id), "project.json"), "utf8");
-  return ProjectSchema.parse(JSON.parse(raw));
+  const file = path.join(dirOf(id), "project.json");
+  if (!existsSync(file)) throw new HttpError(404, `Không có dự án "${id}".`);
+  let raw: string;
+  try {
+    raw = await readFile(file, "utf8");
+  } catch {
+    throw new HttpError(500, `Không đọc được dự án "${id}".`);
+  }
+  try {
+    return ProjectSchema.parse(JSON.parse(raw));
+  } catch (e) {
+    throw new HttpError(422, `project.json của "${id}" không hợp lệ: ${(e as Error).message}`);
+  }
 }
 async function saveProject(id: string, p: Project): Promise<void> {
   await writeFile(path.join(dirOf(id), "project.json"), JSON.stringify(p, null, 2) + "\n", "utf8");
@@ -607,10 +625,11 @@ app.get("/api/jobs/:jobId/stream", async (req, reply) => {
 // ───────────────────────────────────────────────── an toàn
 
 // Trả lỗi dạng JSON để giao diện hiện được thông báo thay vì trang trắng.
-app.setErrorHandler((err: unknown, _req, reply) => {
+app.setErrorHandler((err: unknown, req, reply) => {
   const msg = err instanceof Error ? err.message : String(err);
-  console.error("[api]", msg);
-  reply.code(400).send({ error: msg });
+  const code = typeof (err as any)?.statusCode === "number" ? (err as any).statusCode : 400;
+  console.error("[api]", req.method, req.url, "->", code, msg);
+  reply.code(code).send({ error: msg });
 });
 
 // Lưới cuối: một lỗi lẻ (client ngắt kết nối, ffmpeg chết bất thường) không

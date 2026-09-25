@@ -50,6 +50,21 @@ function autoGrow(ta, minRows = 2) {
   return ta;
 }
 
+/**
+ * Gắn sự kiện an toàn. Nếu markup và script lệch nhau (ví dụ trình duyệt còn giữ
+ * bản app.js cũ trong cache) thì chỉ phần tử đó mất tác dụng, chứ không ném lỗi
+ * làm chết luôn mọi binding phía sau.
+ */
+function on(sel, type, fn) {
+  const n = typeof sel === "string" ? $(sel) : sel;
+  if (!n) {
+    console.warn("[Video Studio] không tìm thấy phần tử:", sel);
+    return null;
+  }
+  n.addEventListener(type, fn);
+  return n;
+}
+
 const api = async (url, opts = {}) => {
   const r = await fetch(url, {
     ...opts,
@@ -687,20 +702,20 @@ for (const head of $$(".card-head[data-toggle]")) {
 }
 
 // menu chọn dự án
-$("#projBtn").onclick = (e) => {
+on("#projBtn", "click", (e) => {
   e.stopPropagation();
   const m = $("#projMenu");
   m.hidden = !m.hidden;
   $("#projBtn").setAttribute("aria-expanded", String(!m.hidden));
-};
+});
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".proj-switch")) closeProjMenu();
 });
 
 // dự án mới
-$("#btnFirst").onclick = askNewProject;
-$("#newCancel").onclick = (e) => { e.preventDefault(); $("#newDlg").close(); };
-$("#newOk").onclick = async (e) => {
+on("#btnFirst", "click", askNewProject);
+on("#newCancel", "click", (e) => { e.preventDefault(); $("#newDlg").close(); });
+on("#newOk", "click", async (e) => {
   e.preventDefault();
   const title = $("#newTitle").value.trim();
   if (!title) return;
@@ -710,14 +725,14 @@ $("#newOk").onclick = async (e) => {
     await refreshProjects(id);
     toast("Đã tạo dự án.", "ok");
   } catch (x) { fail(x); }
-};
+});
 
 // thêm media từ hộp chọn file
-$("#btnUpload").onclick = () => $("#fileInput").click();
-$("#fileInput").onchange = async (e) => {
+on("#btnUpload", "click", () => $("#fileInput").click());
+on("#fileInput", "change", async (e) => {
   await addFiles([...e.target.files]).catch(fail);
   e.target.value = "";
-};
+});
 
 // kéo thả file vào cả cửa sổ
 const hasFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes("Files");
@@ -763,21 +778,24 @@ dz.addEventListener("dragleave", () => dz.classList.remove("hot"));
 dz.addEventListener("drop", () => dz.classList.remove("hot"));
 
 // thêm nhịp
-$("#btnAddBeat").onclick = () => {
+on("#btnAddBeat", "click", () => {
   state.project.beats.push(newBeat());
   renderBeats();
   touch();
   $("#beatList").lastElementChild?.querySelector("textarea")?.focus();
-};
+});
 
 // dán văn bản → tách thành nhịp
-$("#btnPasteText").onclick = () => {
+on("#btnPasteText", "click", () => {
   $("#pasteText").value = "";
+  // bỏ tick mỗi lần mở: giữ nguyên trạng thái cũ dễ khiến người dùng vô tình
+  // xoá sạch kịch bản ở lần dán sau
+  $("#pasteReplace").checked = false;
   $("#pasteDlg").showModal();
   $("#pasteText").focus();
-};
-$("#pasteCancel").onclick = (e) => { e.preventDefault(); $("#pasteDlg").close(); };
-$("#pasteOk").onclick = async (e) => {
+});
+on("#pasteCancel", "click", (e) => { e.preventDefault(); $("#pasteDlg").close(); });
+on("#pasteOk", "click", async (e) => {
   e.preventDefault();
   const text = $("#pasteText").value.trim();
   if (!text) return;
@@ -791,17 +809,17 @@ $("#pasteOk").onclick = async (e) => {
     touch();
     toast(`Đã tạo ${beats.length} nhịp.`, "ok");
   } catch (x) { fail(x); }
-};
+});
 
 // cài đặt chung
-$("#sourceLabel").oninput = (e) => { state.project.brand.sourceLabel = e.target.value; touch(); };
-$("#voiceRate").onchange = (e) => { state.project.voice.rate = e.target.value; invalidateVo(); touch(); };
-$("#voicePitch").onchange = (e) => { state.project.voice.pitch = e.target.value; invalidateVo(); touch(); };
-$("#voiceId").onchange = (e) => {
+on("#sourceLabel", "input", (e) => { state.project.brand.sourceLabel = e.target.value; touch(); });
+on("#voiceRate", "change", (e) => { state.project.voice.rate = e.target.value; invalidateVo(); touch(); });
+on("#voicePitch", "change", (e) => { state.project.voice.pitch = e.target.value; invalidateVo(); touch(); });
+on("#voiceId", "change", (e) => {
   state.project.voice.voiceId = e.target.value;
   invalidateVo();
   touch();
-};
+});
 
 /** Đổi giọng hoặc tốc độ thì mọi độ dài đã đo không còn đúng nữa. */
 function invalidateVo() {
@@ -809,16 +827,16 @@ function invalidateVo() {
   renderBeats();
 }
 
-$("#btnVoiceTest").onclick = async () => {
+on("#btnVoiceTest", "click", async () => {
   const text = $("#voiceTest").value.trim() || state.project.beats.find((b) => b.vo)?.vo;
   if (!text) return fail("Nhập một câu để nghe thử.");
   $("#btnVoiceTest").disabled = true;
   try { await speak(text); } catch (e) { fail(e); }
   finally { $("#btnVoiceTest").disabled = false; }
-};
+});
 
-$("#btnBadge").onclick = () => $("#badgeInput").click();
-$("#badgeInput").onchange = async (e) => {
+on("#btnBadge", "click", () => $("#badgeInput").click());
+on("#badgeInput", "change", async (e) => {
   if (!e.target.files[0]) return;
   const fd = new FormData();
   fd.append("file", e.target.files[0]);
@@ -834,10 +852,10 @@ $("#badgeInput").onchange = async (e) => {
     toast("Đã đổi logo.", "ok");
   } catch (x) { fail(x); }
   e.target.value = "";
-};
+});
 
-$("#btnOutro").onclick = () => $("#outroInput").click();
-$("#outroInput").onchange = async (e) => {
+on("#btnOutro", "click", () => $("#outroInput").click());
+on("#outroInput", "change", async (e) => {
   if (!e.target.files[0]) return;
   const fd = new FormData();
   fd.append("file", e.target.files[0]);
@@ -849,10 +867,10 @@ $("#outroInput").onchange = async (e) => {
     toast(`Đã gắn outro ${r.durationSec}s.`, "ok");
   } catch (x) { fail(x); }
   e.target.value = "";
-};
+});
 
 // lấy nội dung từ bài báo
-$("#btnExtract").onclick = async () => {
+on("#btnExtract", "click", async () => {
   const url = $("#articleUrl").value.trim();
   if (!url) return;
   $("#btnExtract").disabled = true;
@@ -863,7 +881,7 @@ $("#btnExtract").onclick = async () => {
   } finally {
     $("#btnExtract").disabled = false;
   }
-};
+});
 
 function showExtract(ex) {
   const box = $("#extractOut");
@@ -956,32 +974,39 @@ const openBrowse = async () => {
   $("#browseDlg").showModal();
   await browse("").catch(fail);
 };
-$("#btnBrowse").onclick = openBrowse;
-$("#btnBrowse2").onclick = openBrowse;
+on("#btnBrowse", "click", openBrowse);
+on("#btnBrowse2", "click", openBrowse);
 
 const closeBrowse = (e) => { e?.preventDefault(); $("#browseDlg").close(); };
-$("#browseClose").onclick = closeBrowse;
-$("#browseCancel").onclick = closeBrowse;
+on("#browseClose", "click", closeBrowse);
+on("#browseCancel", "click", closeBrowse);
 
-$("#browseUp").onclick = () => browse(fb.parent).catch(fail);
+on("#browseUp", "click", () => browse(fb.parent).catch(fail));
 
 // gõ đường dẫn tay khi cần
-$("#browseEdit").onclick = () => {
+function togglePathInput() {
   const inp = $("#browsePath");
   const showing = !inp.hidden;
   inp.hidden = showing;
   $("#browseCrumbs").hidden = !showing;
   if (!showing) { inp.value = fb.dir; inp.focus(); inp.select(); }
-};
-$("#browsePath").onkeydown = (e) => {
+}
+on("#browseEdit", "click", togglePathInput);
+on("#browsePath", "keydown", (e) => {
   if (e.key === "Enter") { e.preventDefault(); browse($("#browsePath").value).catch(fail); }
-  if (e.key === "Escape") { e.preventDefault(); $("#browseEdit").onclick(); }
-};
+  if (e.key === "Escape") { e.preventDefault(); togglePathInput(); }
+});
 
-$("#browseFilter").oninput = (e) => {
+// bấm ra vùng nền tối cũng đóng hộp thoại — thói quen quen thuộc, đồng thời là
+// đường lui nếu vì lý do gì nút đóng không ăn
+for (const d of document.querySelectorAll("dialog")) {
+  d.addEventListener("click", (e) => { if (e.target === d) d.close(); });
+}
+
+on("#browseFilter", "input", (e) => {
   fb.filter = e.target.value.trim().toLowerCase();
   renderBrowse();
-};
+});
 
 /** Nối đường dẫn theo đúng dấu phân cách của hệ điều hành đang duyệt. */
 function joinPath(dir, name) {
@@ -1112,7 +1137,7 @@ function updateBrowseFoot() {
   $("#browseInfo").textContent = n ? `Đã chọn ${n} file` : "Bấm để chọn, bấm đúp để thêm ngay";
 }
 
-$("#browseAdd").onclick = () => addPicked().catch(fail);
+on("#browseAdd", "click", () => addPicked().catch(fail));
 
 async function addPicked() {
   const paths = [...fb.picked];
@@ -1137,7 +1162,7 @@ async function addPicked() {
 }
 
 // xem trước trong HyperFrames Studio
-$("#btnPreview").onclick = async () => {
+on("#btnPreview", "click", async () => {
   try {
     resetSteps();
     await saveProject();
@@ -1148,17 +1173,17 @@ $("#btnPreview").onclick = async () => {
     if (r?.url) window.open(r.url, "_blank");
     else toast("Đã bật xem trước — xem nhật ký để lấy địa chỉ.");
   } catch (e) { fail(e); }
-};
+});
 
-$("#btnPreviewStop").onclick = async () => {
+on("#btnPreviewStop", "click", async () => {
   try {
     await runJob(`/api/projects/${state.id}/preview-stop`, "Dừng xem trước");
     $("#btnPreviewStop").hidden = true;
   } catch (e) { fail(e); }
-};
+});
 
 // render ra MP4
-$("#btnRender").onclick = async () => {
+on("#btnRender", "click", async () => {
   const p = state.project;
   if (!p.beats.length) return fail("Chưa có nhịp nào.");
   const noMedia = p.beats.filter((b) => !b.mediaKey).length;
@@ -1181,13 +1206,16 @@ $("#btnRender").onclick = async () => {
     $("#resultVideo").src = r.url;
     $("#resultInfo").textContent = r.durationSec ? `${r.durationSec.toFixed(2)} giây · ${r.file}` : r.file;
     $("#resultPath").textContent = r.absolutePath;
-    $("#btnReveal").onclick = () =>
-      api("/api/reveal", { method: "POST", body: JSON.stringify({ absolutePath: r.absolutePath }) })
-        .catch(fail);
+    const reveal = $("#btnReveal");
+    if (reveal) {
+      reveal.onclick = () =>
+        api("/api/reveal", { method: "POST", body: JSON.stringify({ absolutePath: r.absolutePath }) })
+          .catch(fail);
+    }
     $("#resultPanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
     toast("Video đã xong.", "ok");
   } catch (e) { fail(e); }
-};
+});
 
 // phím tắt Ctrl+S
 window.addEventListener("keydown", (e) => {
