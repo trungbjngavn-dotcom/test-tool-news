@@ -113,7 +113,8 @@ app.post("/api/projects", async (req) => {
   await mkdir(path.join(dirOf(id), "assets", "media"), { recursive: true });
   await mkdir(path.join(dirOf(id), "assets", "brand"), { recursive: true });
   await mkdir(path.join(dirOf(id), "assets", "outro"), { recursive: true });
-  // badge mặc định để dự án mới hiển thị đúng ngay
+  // Logo mặc định đi kèm mã nguồn, chép sẵn vào dự án mới để hiển thị đúng ngay.
+  // Outro thì không đặt sẵn — mỗi người một clip riêng, tự chọn ở cột trái.
   if (existsSync(path.join(BUNDLED, "badge.png"))) {
     await copyFile(path.join(BUNDLED, "badge.png"), path.join(dirOf(id), "assets", "brand", "badge.png"));
   }
