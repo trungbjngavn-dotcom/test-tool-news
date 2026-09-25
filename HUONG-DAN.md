@@ -60,28 +60,52 @@ liên tục suốt cả cảnh, không giật lại khi chữ đổi. Nhịp nà
 - **Video** — chạy thật, luôn tắt tiếng. Đặt `mediaStartSec` trong `project.json`
   nếu muốn bắt đầu từ giữa clip.
 
+### Độ phân giải ảnh
+Nửa trên khung hình là 1080×1072 (gần vuông) và ảnh được phủ kín theo kiểu
+`object-fit: cover`, cộng Ken Burns phóng sẵn 1,06 lần. Ảnh phải phóng quá
+**1,6 lần** mới phủ kín thì bị đánh dấu chấm đỏ trong thư viện, và app hỏi lại
+trước khi render.
+
+Hay gặp nhất là kéo thẳng ảnh từ một trang web vào — trình duyệt chỉ đưa bản
+hiển thị nhỏ (có khi chỉ 320×179). Hãy lưu ảnh gốc về máy rồi mới thả vào.
+
 ---
 
 ## 4. Giọng đọc
 
 Dùng **edge-tts** (dịch vụ TTS của Microsoft Edge, miễn phí, không cần tài khoản).
-Hai giọng tiếng Việt:
 
-| Giọng | Mã |
-|-------|-----|
-| Nam Minh (nam) | `vi-VN-NamMinhNeural` |
-| Hoài My (nữ) | `vi-VN-HoaiMyNeural` |
+**14 giọng**, chia hai nhóm:
 
-Tốc độ: chậm / bình thường / hơi nhanh / nhanh kiểu bản tin.
+| Nhóm | Giọng |
+|------|-------|
+| Tiếng Việt bản địa | Nam Minh (nam), Hoài My (nữ) |
+| Đa ngữ — đọc được tiếng Việt | Andrew, Brian, William, Hyunsu, Giuseppe, Florian, Rémy (nam); Ava, Emma, Seraphina, Vivienne, Thalita (nữ) |
 
-Ô **Nghe thử** ở cột trái để thử giọng trước; mỗi nhịp cũng có nút **Nghe thử** riêng.
+Microsoft chỉ có đúng hai giọng Việt bản địa. Nhóm đa ngữ đã được thử thật với
+một câu tiếng Việt — tất cả đều ra audio dài tương đương giọng bản địa (4,6–5,7
+giây cho cùng một câu), tức là chúng đọc chứ không đánh vần. Chất giọng thì còn
+pha âm sắc nước ngoài ở mức khác nhau, nên giao diện có nhắc và bạn **nên bấm
+Nghe thử trước khi chốt**.
 
-File giọng được cache trong `projects/<id>/assets/vo/`. Sửa câu đọc thì file cũ bị
-huỷ và sinh lại ở lần dựng sau — câu không đổi thì không sinh lại, nên dựng lần
-hai rất nhanh.
+Hai trục điều chỉnh thêm:
 
-Đổi giọng hoặc tốc độ sẽ làm mọi độ dài đã đo không còn đúng, nên toàn bộ được
-đánh dấu sinh lại.
+- **Tốc độ** — chậm / hơi chậm / bình thường / hơi nhanh / nhanh kiểu bản tin
+- **Cao độ** — trầm / hơi trầm / bình thường / hơi cao / cao
+
+Kết hợp 14 giọng × 5 tốc độ × 5 cao độ cho khá nhiều lựa chọn dù số giọng bản địa ít.
+
+Ô **Nghe thử** ở cột trái để thử nhanh; mỗi nhịp cũng có nút **Nghe thử** riêng.
+
+### Cache giọng đọc
+
+File nằm trong `projects/<id>/assets/vo/` và được đặt tên theo **chữ ký** gồm
+nội dung câu + giọng + tốc độ + cao độ, ví dụ `b1-6d32dd5676.wav`. Nhờ vậy:
+
+- sửa một câu → chỉ câu đó sinh lại, các câu khác dùng lại file cũ;
+- đổi giọng, tốc độ hay cao độ → **mọi câu tự sinh lại**, không còn cảnh đổi
+  giọng mà video vẫn đọc giọng cũ;
+- file của những lần trước được dọn tự động.
 
 ---
 

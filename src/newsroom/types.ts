@@ -22,6 +22,9 @@ export const MediaSchema = z.object({
   mediaStartSec: z.number().min(0).default(0),
   /** Chỉ dùng cho video: có lấy tiếng gốc của clip không (mặc định không, để nghe voiceover). */
   useSourceAudio: z.boolean().default(false),
+  /** Kích thước thật của file, để cảnh báo khi ảnh quá nhỏ so với khung 1080×1920. */
+  width: z.number().optional(),
+  height: z.number().optional(),
 });
 export type Media = z.infer<typeof MediaSchema>;
 
@@ -76,6 +79,8 @@ export const VoiceSchema = z.object({
   voiceId: z.string().default("vi-VN-NamMinhNeural"),
   /** Định dạng edge-tts: "+0%", "+25%", "-10%". */
   rate: z.string().default("+0%"),
+  /** Cao độ, định dạng edge-tts: "+0Hz", "-8Hz", "+4Hz". */
+  pitch: z.string().default("+0Hz"),
 });
 
 export const ProjectSchema = z.object({

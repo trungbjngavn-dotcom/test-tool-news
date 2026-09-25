@@ -24,6 +24,7 @@ import { makeThumb, normalizeImage, probeDurationSec, probeSize } from "../newsr
 import { extractArticle, splitToBeatText } from "./extract.js";
 import { enqueue, getJob, subscribe } from "./jobs.js";
 import { EdgeTtsClient } from "../tts/edge-tts-client.js";
+import { VOICES, RATES, PITCHES } from "../newsroom/voices.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..", "..");
@@ -105,7 +106,22 @@ app.post("/api/projects", async (req) => {
 
 app.get("/api/projects/:id", async (req) => {
   const { id } = req.params as { id: string };
-  return { id, project: await loadProject(id) };
+  const project = await loadProject(id);
+  // Media thêm trước khi có trường width/height thì đo bù một lần, để giao diện
+  // vẫn cảnh báo được ảnh quá nhỏ so với khung 1080×1920.
+  let filled = false;
+  for (const m of Object.values(project.media)) {
+    if (m.width && m.height) continue;
+    const abs = path.join(dirOf(id), m.src);
+    if (!existsSync(abs)) continue;
+    const size = await probeSize(abs);
+    if (!size) continue;
+    m.width = size.width;
+    m.height = size.height;
+    filled = true;
+  }
+  if (filled) await saveProject(id, project);
+  return { id, project };
 });
 
 app.put("/api/projects/:id", async (req) => {
@@ -127,7 +143,10 @@ app.delete("/api/projects/:id", async (req) => {
  */
 async function persistMedia(
   id: string,
-  added: Array<{ key?: string; src?: string; kind?: string; error?: string }>,
+  added: Array<{
+    key?: string; src?: string; kind?: string; error?: string;
+    size?: { width: number; height: number } | null;
+  }>,
 ): Promise<void> {
   const ok = added.filter((a) => a.key && a.src && !a.error);
   if (ok.length === 0) return;
@@ -139,6 +158,8 @@ async function persistMedia(
       position: "50% 50%",
       mediaStartSec: 0,
       useSourceAudio: false,
+      width: a.size?.width,
+      height: a.size?.height,
     };
   }
   await saveProject(id, p);
@@ -344,19 +365,17 @@ app.post("/api/projects/:id/media-from-url", async (req) => {
 
 app.post("/api/projects/:id/voice-preview", async (req) => {
   const { id } = req.params as { id: string };
-  const { text, voiceId, rate } = req.body as { text: string; voiceId: string; rate: string };
+  const { text, voiceId, rate, pitch } = req.body as
+    { text: string; voiceId: string; rate: string; pitch?: string };
   const dir = path.join(dirOf(id), "assets", "preview");
   await mkdir(dir, { recursive: true });
   const dest = path.join(dir, "voice-preview.mp3");
-  await new EdgeTtsClient({ voice: voiceId, rate }).generate(text, dest);
+  await new EdgeTtsClient({ voice: voiceId, rate, pitch: pitch ?? "+0Hz" }).generate(text, dest);
   const durationSec = Math.round((await probeDurationSec(dest)) * 1000) / 1000;
   return { src: `assets/preview/voice-preview.mp3`, durationSec, t: Date.now() };
 });
 
-app.get("/api/voices", async () => [
-  { id: "vi-VN-NamMinhNeural", label: "Nam Minh (nam)" },
-  { id: "vi-VN-HoaiMyNeural", label: "Hoài My (nữ)" },
-]);
+app.get("/api/voices", async () => ({ voices: VOICES, rates: RATES, pitches: PITCHES }));
 
 // ───────────────────────────────────────────────── build / preview / render
 

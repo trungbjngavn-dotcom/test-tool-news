@@ -22,6 +22,7 @@ const ICON = {
   folder: "M3 7.5A1.5 1.5 0 014.5 6h4l2 2.5h9A1.5 1.5 0 0121 10v8a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 18z",
   file: "M14 3H7.5A1.5 1.5 0 006 4.5v15A1.5 1.5 0 007.5 21h9a1.5 1.5 0 001.5-1.5V7zM14 3v4h4",
   x: "M6 6l12 12M18 6L6 18",
+  plus: "M12 5v14M5 12h14",
 };
 
 function icon(d) {
@@ -84,6 +85,19 @@ const state = {
 };
 
 const fileUrl = (rel) => `/api/projects/${state.id}/file/${rel}?t=${state.stamp}`;
+
+/* Nửa trên khung hình là 1080×1072 (gần vuông) và ảnh được phủ kín theo kiểu
+   object-fit: cover, cộng thêm Ken Burns phóng nhẹ 1.06 lần ngay từ đầu. Vậy hệ
+   số phóng thực tế = max(1145/rộng, 1136/cao). Dưới 1.6 lần thì mắt thường gần
+   như không thấy, nên chỉ cảnh báo từ mức đó trở lên — tránh báo động giả. */
+const FIT_W = 1145, FIT_H = 1136, MAX_UPSCALE = 1.6;
+
+/** Ảnh phải phóng lên bao nhiêu lần để phủ kín nửa trên. */
+function upscaleOf(m) {
+  if (m.kind !== "image" || !m.width || !m.height) return 0;
+  return Math.max(FIT_W / m.width, FIT_H / m.height);
+}
+const isLowRes = (m) => upscaleOf(m) > MAX_UPSCALE;
 
 /** Đánh dấu có thay đổi → tự lưu sau 700ms im lặng. */
 function touch() {
@@ -186,6 +200,10 @@ function renderMedia() {
   const entries = Object.entries(state.project.media ?? {});
   $("#mediaCount").textContent = String(entries.length);
 
+  // Trống thì mời kéo thả; có rồi thì ô "+" cuối lưới là đủ, khỏi chiếm chỗ.
+  $("#dropzone").hidden = entries.length > 0;
+  $("#btnBrowse2").hidden = entries.length === 0;
+
   for (const [key, m] of entries) {
     const item = el("div", "media-item");
     item.draggable = true;
@@ -196,7 +214,17 @@ function renderMedia() {
     img.src = fileUrl(`assets/media/${key}-thumb.jpg`);
     img.alt = "";
     img.onerror = () => img.remove();
-    item.append(img, el("span", "tag", m.kind === "video" ? "VIDEO" : "ẢNH"));
+    const tag = el("span", "tag" + (m.kind === "video" ? " is-video" : ""),
+      m.kind === "video" ? "VIDEO" : "ẢNH");
+    item.append(img, tag);
+
+    if (isLowRes(m)) {
+      item.classList.add("is-lowres");
+      const w = el("span", "warn-dot", "!");
+      w.title = `Ảnh ${m.width}×${m.height}px, phải phóng ${upscaleOf(m).toFixed(1)} lần ` +
+        "để phủ kín nửa trên khung hình — lên video sẽ vỡ hạt.";
+      item.append(w);
+    }
 
     const del = el("button", "del");
     del.append(icon(ICON.x));
@@ -216,6 +244,17 @@ function renderMedia() {
       e.dataTransfer.effectAllowed = "copy";
     };
     grid.append(item);
+  }
+
+  if (entries.length) {
+    const add = el("div", "media-add");
+    add.append(icon(ICON.plus), el("span", null, "Thêm"));
+    add.title = "Chọn thêm file, hoặc kéo thả vào đây";
+    add.onclick = () => $("#fileInput").click();
+    add.ondragover = (e) => { if (hasFiles(e)) { e.preventDefault(); add.classList.add("hot"); } };
+    add.ondragleave = () => add.classList.remove("hot");
+    add.ondrop = () => add.classList.remove("hot");
+    grid.append(add);
   }
 }
 
@@ -245,6 +284,18 @@ function applyAdded(added) {
   renderAll();
   touch();
   if (ok) toast(`Đã thêm ${ok} media.`, "ok");
+
+  const small = added.filter(
+    (a) => !a.error && a.size && isLowRes({ kind: a.kind, width: a.size.width, height: a.size.height }),
+  );
+  if (small.length) {
+    const worst = small.reduce((x, y) => (y.size.width < x.size.width ? y : x));
+    toast(
+      `${small.length} ảnh quá nhỏ so với khung hình (nhỏ nhất ${worst.size.width}×${worst.size.height}px) — ` +
+      "lên video sẽ vỡ hạt. Nên lấy bản gốc độ phân giải cao hơn.",
+      "err",
+    );
+  }
 }
 
 // ───────────────────────────────────────────── kịch bản
@@ -414,19 +465,22 @@ function renderBeats() {
       d.type = "text";
       d.placeholder = "Ngày, ví dụ 25/9/2026";
       d.value = b.date ?? "";
+      d.className = "f-date";
       d.oninput = () => { b.date = d.value; touch(); };
-      fields.append(el("div", "sub-label", "Ngày"), d);
+      fields.append(el("div", "sub-label d-date", "Ngày"), d);
 
       const h = autoGrow(el("textarea"), 2);
       h.placeholder = "Mỗi dòng ở đây là một dòng tiêu đề trên màn hình";
       h.value = (b.headline ?? []).join("\n");
       h.oninput = () => { b.headline = h.value.split("\n").filter((x) => x.trim()); touch(); };
-      fields.append(el("div", "sub-label", "Tiêu đề"), h);
+      h.className = "auto f-title";
+      fields.append(el("div", "sub-label d-title", "Tiêu đề"), h);
     } else {
       textArea = autoGrow(el("textarea"), 2);
       textArea.placeholder = "Chữ hiện trên màn hình…";
       textArea.value = b.text ?? "";
-      fields.append(el("div", "sub-label", "Chữ hiển thị"), textArea);
+      textArea.classList.add("f-text");
+      fields.append(el("div", "sub-label d-text", "Chữ hiển thị"), textArea);
     }
 
     const vo = autoGrow(el("textarea"), 2);
@@ -437,7 +491,8 @@ function renderBeats() {
       delete b.voDurationSec;
       touch();
     };
-    const voLabel = el("div", "sub-label", "Giọng đọc");
+    vo.classList.add("f-vo");
+    const voLabel = el("div", "sub-label d-vo", "Giọng đọc");
     fields.append(voLabel, vo);
 
     if (textArea) {
@@ -511,7 +566,9 @@ function renderSettings() {
   const p = state.project;
   $("#sourceLabel").value = p.brand.sourceLabel;
   $("#voiceRate").value = p.voice.rate;
+  $("#voicePitch").value = p.voice.pitch ?? "+0Hz";
   $("#voiceId").value = p.voice.voiceId;
+  updateVoiceHint();
   $("#outroInfo").textContent = p.outro.src
     ? `Đang dùng ${p.outro.src} — ${p.outro.durationSec}s`
     : "Chưa có outro. Video sẽ kết thúc ngay ở nhịp cuối.";
@@ -610,7 +667,12 @@ function runJob(url, label, lastStep) {
 async function speak(text) {
   await api(`/api/projects/${state.id}/voice-preview`, {
     method: "POST",
-    body: JSON.stringify({ text, voiceId: $("#voiceId").value, rate: $("#voiceRate").value }),
+    body: JSON.stringify({
+      text,
+      voiceId: $("#voiceId").value,
+      rate: $("#voiceRate").value,
+      pitch: $("#voicePitch").value,
+    }),
   });
   const a = $("#voiceAudio");
   a.src = `/api/projects/${state.id}/file/assets/preview/voice-preview.mp3?t=${Date.now()}`;
@@ -719,7 +781,13 @@ $("#pasteOk").onclick = async (e) => {
 // cài đặt chung
 $("#sourceLabel").oninput = (e) => { state.project.brand.sourceLabel = e.target.value; touch(); };
 $("#voiceRate").onchange = (e) => { state.project.voice.rate = e.target.value; invalidateVo(); touch(); };
-$("#voiceId").onchange = (e) => { state.project.voice.voiceId = e.target.value; invalidateVo(); touch(); };
+$("#voicePitch").onchange = (e) => { state.project.voice.pitch = e.target.value; invalidateVo(); touch(); };
+$("#voiceId").onchange = (e) => {
+  state.project.voice.voiceId = e.target.value;
+  updateVoiceHint();
+  invalidateVo();
+  touch();
+};
 
 /** Đổi giọng hoặc tốc độ thì mọi độ dài đã đo không còn đúng nữa. */
 function invalidateVo() {
@@ -855,10 +923,12 @@ function showExtract(ex) {
 }
 
 // duyệt thư mục trong máy
-$("#btnBrowse").onclick = async () => {
+const openBrowse = async () => {
   $("#browseDlg").showModal();
   await browse("").catch(fail);
 };
+$("#btnBrowse").onclick = openBrowse;
+$("#btnBrowse2").onclick = openBrowse;
 $("#browseClose").onclick = (e) => { e.preventDefault(); $("#browseDlg").close(); };
 $("#browseGo").onclick = () => browse($("#browsePath").value).catch(fail);
 $("#browsePath").onkeydown = (e) => {
@@ -927,6 +997,12 @@ $("#btnRender").onclick = async () => {
   const noMedia = p.beats.filter((b) => !b.mediaKey).length;
   if (noMedia && !confirm(`${noMedia} nhịp chưa gán ảnh hoặc video. Vẫn tạo video?`)) return;
 
+  const lowres = [...new Set(p.beats.map((b) => b.mediaKey))]
+    .filter((k) => p.media[k] && isLowRes(p.media[k]));
+  if (lowres.length && !confirm(
+    `${lowres.length} ảnh đang dùng có độ phân giải quá thấp so với khung hình nên sẽ vỡ hạt. Vẫn tạo video?`,
+  )) return;
+
   try {
     resetSteps();
     await saveProject();
@@ -964,16 +1040,46 @@ window.addEventListener("beforeunload", (e) => {
 
 // ───────────────────────────────────────────── khởi động
 
+/** Dựng <select> giọng theo nhóm, cùng hai ô tốc độ và cao độ. */
+function fillVoiceControls({ voices, rates, pitches }) {
+  state.voices = voices;
+
+  const sel = $("#voiceId");
+  sel.innerHTML = "";
+  const groups = [...new Set(voices.map((v) => v.group))];
+  for (const g of groups) {
+    const og = document.createElement("optgroup");
+    og.label = g;
+    for (const v of voices.filter((x) => x.group === g)) {
+      const o = el("option", null, `${v.label} (${v.gender})`);
+      o.value = v.id;
+      og.append(o);
+    }
+    sel.append(og);
+  }
+
+  for (const [id, list] of [["#voiceRate", rates], ["#voicePitch", pitches]]) {
+    const n = $(id);
+    n.innerHTML = "";
+    for (const r of list) {
+      const o = el("option", null, r.label);
+      o.value = r.value;
+      n.append(o);
+    }
+  }
+}
+
+/** Nhắc rằng giọng đa ngữ còn pha âm sắc nước ngoài. */
+function updateVoiceHint() {
+  const v = (state.voices ?? []).find((x) => x.id === $("#voiceId").value);
+  $("#voiceHint").hidden = !v || v.native;
+}
+
 (async function init() {
   try {
-    const voices = await api("/api/voices");
-    const sel = $("#voiceId");
-    for (const v of voices) {
-      const o = el("option", null, v.label);
-      o.value = v.id;
-      sel.append(o);
-    }
+    fillVoiceControls(await api("/api/voices"));
     await refreshProjects();
+    updateVoiceHint();
   } catch (e) {
     fail(e);
   }

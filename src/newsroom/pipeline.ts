@@ -6,7 +6,7 @@
  * phát ra theo sự kiện để giao diện web hiển thị được.
  */
 
-import { mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdir, writeFile, rm, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import path from "node:path";
@@ -15,6 +15,7 @@ import type { Project } from "./types.js";
 import { computeTimeline } from "./timeline.js";
 import { composeNewsroom } from "./composer.js";
 import { EdgeTtsClient } from "../tts/edge-tts-client.js";
+import { createHash } from "node:crypto";
 import type { TtsClient } from "../tts/tts-client.js";
 import { probeDurationSec, ffmpegConvert } from "./media-probe.js";
 
@@ -23,7 +24,7 @@ export type Progress = (ev: { step: string; detail?: string; pct?: number }) => 
 function ttsFor(p: Project): TtsClient {
   switch (p.voice.provider) {
     case "edge-tts":
-      return new EdgeTtsClient({ voice: p.voice.voiceId, rate: p.voice.rate });
+      return new EdgeTtsClient({ voice: p.voice.voiceId, rate: p.voice.rate, pitch: p.voice.pitch });
     default:
       // Các nhà cung cấp trả phí cần API key trong .env — dùng factory của repo gốc.
       throw new Error(
@@ -33,9 +34,19 @@ function ttsFor(p: Project): TtsClient {
 }
 
 /**
+ * Chữ ký của một câu đọc: gồm nội dung VÀ mọi thiết lập giọng. Tên file chứa chữ
+ * ký này nên đổi giọng, tốc độ hay cao độ là tự sinh lại, còn sửa một câu thì
+ * các câu khác vẫn dùng lại file cũ.
+ */
+function voSignature(p: Project, text: string): string {
+  const key = [p.voice.provider, p.voice.voiceId, p.voice.rate, p.voice.pitch, text].join("\u0000");
+  return createHash("sha1").update(key).digest("hex").slice(0, 10);
+}
+
+/**
  * Sinh giọng đọc cho mọi beat và ghi `voDurationSec`.
- * Idempotent: beat nào đã có file wav hợp lệ thì bỏ qua — đổi một câu không phải
- * sinh lại cả bài. Xoá file wav của beat để buộc sinh lại.
+ * Chỉ sinh lại những câu thực sự đổi (theo chữ ký ở trên); file thừa của các
+ * lần trước bị dọn đi để thư mục không phình.
  */
 export async function synthVoices(
   p: Project,
@@ -47,11 +58,16 @@ export async function synthVoices(
   const client = ttsFor(p);
   const rel: Record<string, string> = {};
 
+  const keep = new Set<string>();
+
   for (let i = 0; i < p.beats.length; i++) {
     const b = p.beats[i];
-    const wav = path.join(voDir, `${b.id}.wav`);
-    const mp3 = path.join(voDir, `${b.id}.mp3`);
-    rel[b.id] = `assets/vo/${b.id}.wav`;
+    const stem = `${b.id}-${voSignature(p, b.vo)}`;
+    const wav = path.join(voDir, `${stem}.wav`);
+    const mp3 = path.join(voDir, `${stem}.mp3`);
+    rel[b.id] = `assets/vo/${stem}.wav`;
+    keep.add(`${stem}.wav`);
+    keep.add(`${stem}.mp3`);
 
     if (!existsSync(wav)) {
       onProgress({ step: "tts", detail: `${b.id}: đang sinh giọng…`, pct: i / p.beats.length });
@@ -77,6 +93,13 @@ export async function synthVoices(
       detail: `${b.id}: ${b.voDurationSec.toFixed(2)}s`,
       pct: (i + 1) / p.beats.length,
     });
+  }
+
+  // dọn file của những lần sinh trước (câu cũ, giọng cũ) — đều tái tạo được
+  for (const f of await readdir(voDir)) {
+    if (!keep.has(f) && /\.(wav|mp3)$/i.test(f)) {
+      await rm(path.join(voDir, f), { force: true });
+    }
   }
   return rel;
 }
