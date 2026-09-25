@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Video Studio — Bản tin dọc</title>
 <link rel="stylesheet" href="/style.css" />
+<script>
+  // Chạy trước khi vẽ để không nhấp nháy nền sáng rồi mới sang tối.
+  try {
+    if (localStorage.getItem("video-studio-theme") === "dark") {
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
+  } catch (e) { /* localStorage bị chặn thì cứ để nền sáng */ }
+</script>
 </head>
 <body>
 
@@ -28,6 +36,10 @@
   <div class="grow"></div>
 
   <span id="durChip" class="chip chip--quiet" hidden></span>
+  <button id="btnTheme" class="btn btn--icon btn--icon-top" title="Chuyển nền sáng / tối" aria-label="Chuyển nền sáng / tối">
+    <svg class="ic-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M4.2 12H2M22 12h-2.2M6.3 6.3L4.8 4.8M19.2 19.2l-1.5-1.5M17.7 6.3l1.5-1.5M4.8 19.2l1.5-1.5"/></svg>
+    <svg class="ic-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13.4A8.2 8.2 0 1110.6 4a6.6 6.6 0 009.4 9.4z"/></svg>
+  </button>
   <button id="btnPreview" class="btn btn--ghost">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
     Xem trước
@@ -59,13 +71,11 @@
           <p class="dz-title">Kéo thả ảnh hoặc video vào đây</p>
           <p class="dz-sub">Ảnh sẽ tự zoom chậm, video chạy thật ở nửa trên</p>
           <button id="btnUpload" class="btn btn--primary btn--sm">Chọn file từ máy…</button>
-          <button id="btnBrowse" class="linkbtn">hoặc duyệt theo thư mục</button>
         </div>
         <input id="fileInput" type="file" accept="image/*,video/*" multiple hidden />
 
         <!-- hiện khi đã có media -->
         <div id="mediaGrid" class="media-grid"></div>
-        <button id="btnBrowse2" class="linkbtn linkbtn--block" hidden>Duyệt theo thư mục trong máy…</button>
       </div>
     </section>
 
@@ -219,41 +229,6 @@
   </menu>
 </dialog>
 
-<dialog id="browseDlg" class="dlg dlg--files">
-  <header class="fb-head">
-    <h3>Chọn ảnh &amp; video từ máy</h3>
-    <button id="browseClose" class="btn btn--icon" title="Đóng">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
-    </button>
-  </header>
-
-  <div class="fb-bar">
-    <button id="browseUp" class="btn btn--icon" title="Lên thư mục trên">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m0 0l-6 6m6-6l6 6"/></svg>
-    </button>
-    <nav id="browseCrumbs" class="fb-crumbs"></nav>
-    <button id="browseEdit" class="btn btn--icon" title="Gõ đường dẫn">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.1 2.1 0 00-3-3L5 17z"/></svg>
-    </button>
-    <input id="browsePath" type="text" hidden />
-    <div class="fb-search">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
-      <input id="browseFilter" type="text" placeholder="Lọc theo tên…" />
-    </div>
-  </div>
-
-  <div class="fb-body">
-    <aside id="browseSide" class="fb-side"></aside>
-    <div id="browseList" class="fb-grid"></div>
-  </div>
-
-  <footer class="fb-foot">
-    <span id="browseInfo" class="note"></span>
-    <div class="grow"></div>
-    <button id="browseCancel" class="btn btn--soft btn--sm">Huỷ</button>
-    <button id="browseAdd" class="btn btn--primary btn--sm" disabled>Thêm vào thư viện</button>
-  </footer>
-</dialog>
 
 <div id="toasts" class="toasts"></div>
 <div id="dropveil" class="dropveil" hidden>

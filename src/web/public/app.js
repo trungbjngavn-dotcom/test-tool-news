@@ -74,6 +74,33 @@ const api = async (url, opts = {}) => {
   return r.json();
 };
 
+// ───────────────────────────────────────────── nền sáng / tối
+
+/* Mặc định sáng. Người dùng chọn tối thì nhớ lại cho lần sau. localStorage có
+   thể ném lỗi (chế độ ẩn danh, chặn cookie) nên bọc try/catch. */
+const THEME_KEY = "video-studio-theme";
+
+function applyTheme(mode) {
+  if (mode === "dark") document.documentElement.setAttribute("data-theme", "dark");
+  else document.documentElement.removeAttribute("data-theme");
+  try {
+    localStorage.setItem(THEME_KEY, mode);
+  } catch {
+    /* không lưu được thì thôi, trong phiên vẫn đúng */
+  }
+}
+
+function initTheme() {
+  let saved = null;
+  try {
+    saved = localStorage.getItem(THEME_KEY);
+  } catch {
+    /* bỏ qua */
+  }
+  applyTheme(saved === "dark" ? "dark" : "light");
+}
+initTheme();
+
 // ───────────────────────────────────────────── thông báo nổi
 
 function toast(msg, kind = "") {
@@ -217,7 +244,6 @@ function renderMedia() {
 
   // Trống thì mời kéo thả; có rồi thì ô "+" cuối lưới là đủ, khỏi chiếm chỗ.
   $("#dropzone").hidden = entries.length > 0;
-  $("#btnBrowse2").hidden = entries.length === 0;
 
   for (const [key, m] of entries) {
     const item = el("div", "media-item");
@@ -701,6 +727,11 @@ for (const head of $$(".card-head[data-toggle]")) {
   head.onclick = () => head.closest(".card").classList.toggle("is-open");
 }
 
+on("#btnTheme", "click", () => {
+  const dark = document.documentElement.getAttribute("data-theme") === "dark";
+  applyTheme(dark ? "light" : "dark");
+});
+
 // menu chọn dự án
 on("#projBtn", "click", (e) => {
   e.stopPropagation();
@@ -954,211 +985,9 @@ function showExtract(ex) {
   box.append(ol);
 }
 
-// ═════════════════════════ hộp thoại duyệt file trong máy ══════════════════
-
-const fb = {
-  dir: "",
-  folders: [],
-  files: [],
-  /** đường dẫn tuyệt đối của các file đang chọn */
-  picked: new Set(),
-  filter: "",
-};
-
-const openBrowse = async () => {
-  fb.picked.clear();
-  $("#browseFilter").value = "";
-  fb.filter = "";
-  $("#browsePath").hidden = true;
-  $("#browseCrumbs").hidden = false;
-  $("#browseDlg").showModal();
-  await browse("").catch(fail);
-};
-on("#btnBrowse", "click", openBrowse);
-on("#btnBrowse2", "click", openBrowse);
-
-const closeBrowse = (e) => { e?.preventDefault(); $("#browseDlg").close(); };
-on("#browseClose", "click", closeBrowse);
-on("#browseCancel", "click", closeBrowse);
-
-on("#browseUp", "click", () => browse(fb.parent).catch(fail));
-
-// gõ đường dẫn tay khi cần
-function togglePathInput() {
-  const inp = $("#browsePath");
-  const showing = !inp.hidden;
-  inp.hidden = showing;
-  $("#browseCrumbs").hidden = !showing;
-  if (!showing) { inp.value = fb.dir; inp.focus(); inp.select(); }
-}
-on("#browseEdit", "click", togglePathInput);
-on("#browsePath", "keydown", (e) => {
-  if (e.key === "Enter") { e.preventDefault(); browse($("#browsePath").value).catch(fail); }
-  if (e.key === "Escape") { e.preventDefault(); togglePathInput(); }
-});
-
-// bấm ra vùng nền tối cũng đóng hộp thoại — thói quen quen thuộc, đồng thời là
-// đường lui nếu vì lý do gì nút đóng không ăn
+// bấm ra vùng nền tối cũng đóng hộp thoại
 for (const d of document.querySelectorAll("dialog")) {
   d.addEventListener("click", (e) => { if (e.target === d) d.close(); });
-}
-
-on("#browseFilter", "input", (e) => {
-  fb.filter = e.target.value.trim().toLowerCase();
-  renderBrowse();
-});
-
-/** Nối đường dẫn theo đúng dấu phân cách của hệ điều hành đang duyệt. */
-function joinPath(dir, name) {
-  const sep = dir.includes("\\") ? "\\" : "/";
-  // gốc ổ đĩa đã sẵn dấu phân cách ("C:\\") thì không thêm nữa
-  const base = dir.endsWith("/") || dir.endsWith("\\") ? dir : dir + sep;
-  return base + name;
-}
-
-/** Đổi byte thành chuỗi gọn: 1.2 MB */
-function humanSize(n) {
-  if (!n) return "";
-  const u = ["B", "KB", "MB", "GB"];
-  let i = 0;
-  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
-  return `${n < 10 && i ? n.toFixed(1) : Math.round(n)} ${u[i]}`;
-}
-
-async function browse(dir) {
-  const r = await api(`/api/browse?dir=${encodeURIComponent(dir ?? "")}`);
-  Object.assign(fb, {
-    dir: r.dir, parent: r.parent, atRoot: r.atRoot,
-    crumbs: r.crumbs, shortcuts: r.shortcuts,
-    folders: r.folders, files: r.files,
-  });
-  $("#browsePath").value = r.dir;
-  $("#browseUp").disabled = r.atRoot;
-  renderCrumbs();
-  renderSide();
-  renderBrowse();
-  $("#browseList").scrollTop = 0;
-}
-
-function renderCrumbs() {
-  const nav = $("#browseCrumbs");
-  nav.innerHTML = "";
-  fb.crumbs.forEach((c, i) => {
-    if (i) nav.append(el("span", "sep", "›"));
-    const b = el("button", null, c.name);
-    b.title = c.path;
-    b.onclick = () => browse(c.path).catch(fail);
-    nav.append(b);
-  });
-  nav.scrollLeft = nav.scrollWidth;
-}
-
-function renderSide() {
-  const side = $("#browseSide");
-  side.innerHTML = "";
-  side.append(el("div", "title", "Truy cập nhanh"));
-  for (const sc of fb.shortcuts) {
-    const b = el("button", fb.dir === sc.path ? "on" : "");
-    b.append(icon(ICON.folder), el("span", null, sc.label));
-    b.onclick = () => browse(sc.path).catch(fail);
-    side.append(b);
-  }
-}
-
-function renderBrowse() {
-  const list = $("#browseList");
-  list.innerHTML = "";
-
-  const match = (n) => !fb.filter || n.toLowerCase().includes(fb.filter);
-  const folders = fb.folders.filter(match);
-  const files = fb.files.filter((f) => match(f.name));
-
-  if (!folders.length && !files.length) {
-    list.append(el("p", "note empty-note",
-      fb.filter ? "Không có mục nào khớp bộ lọc." : "Thư mục này không có ảnh hoặc video."));
-    updateBrowseFoot();
-    return;
-  }
-
-  if (folders.length) {
-    list.append(el("div", "row-title", `Thư mục · ${folders.length}`));
-    const box = el("div", "fb-folders");
-    for (const name of folders) {
-      const d = el("div", "fb-folder");
-      d.append(icon(ICON.folder), el("span", null, name));
-      d.title = name;
-      d.onclick = () => browse(joinPath(fb.dir, name)).catch(fail);
-      box.append(d);
-    }
-    list.append(box);
-  }
-
-  if (files.length) {
-    list.append(el("div", "row-title", `Ảnh & video · ${files.length}`));
-    const box = el("div", "fb-files");
-    for (const f of files) {
-      const abs = joinPath(fb.dir, f.name);
-      const card = el("div", "fb-file" + (fb.picked.has(abs) ? " sel" : ""));
-      card.title = f.name + " — " + humanSize(f.bytes);
-
-      const img = el("img", "ph");
-      img.loading = "lazy";
-      img.alt = "";
-      img.src = `/api/browse-thumb?path=${encodeURIComponent(abs)}`;
-      img.onerror = () => { img.style.visibility = "hidden"; };
-      card.append(img);
-
-      card.append(el("span", "kind", f.kind === "video" ? "VIDEO" : "ẢNH"));
-      card.append(el("span", "tick"));
-
-      const meta = el("div", "meta");
-      meta.append(el("div", "nm", f.name), el("div", "sz", humanSize(f.bytes)));
-      card.append(meta);
-
-      card.onclick = () => {
-        if (fb.picked.has(abs)) fb.picked.delete(abs);
-        else fb.picked.add(abs);
-        card.classList.toggle("sel", fb.picked.has(abs));
-        updateBrowseFoot();
-      };
-      // bấm đúp = chọn và thêm luôn
-      card.ondblclick = () => { fb.picked.add(abs); addPicked().catch(fail); };
-      box.append(card);
-    }
-    list.append(box);
-  }
-  updateBrowseFoot();
-}
-
-function updateBrowseFoot() {
-  const n = fb.picked.size;
-  $("#browseAdd").disabled = n === 0;
-  $("#browseAdd").textContent = n ? `Thêm ${n} file vào thư viện` : "Thêm vào thư viện";
-  $("#browseInfo").textContent = n ? `Đã chọn ${n} file` : "Bấm để chọn, bấm đúp để thêm ngay";
-}
-
-on("#browseAdd", "click", () => addPicked().catch(fail));
-
-async function addPicked() {
-  const paths = [...fb.picked];
-  if (!paths.length) return;
-  const btn = $("#browseAdd");
-  btn.disabled = true;
-  btn.textContent = `Đang nạp ${paths.length} file…`;
-  try {
-    const all = [];
-    for (const filePath of paths) {
-      const { added } = await api(`/api/projects/${state.id}/media-from-path`, {
-        method: "POST", body: JSON.stringify({ filePath }),
-      });
-      all.push(...added);
-    }
-    applyAdded(all);
-    fb.picked.clear();
-    $("#browseDlg").close();
-  } finally {
-    updateBrowseFoot();
-  }
 }
 
 // xem trước trong HyperFrames Studio

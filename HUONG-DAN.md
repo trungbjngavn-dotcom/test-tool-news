@@ -28,11 +28,14 @@ Cần sẵn trong máy: Node 20+, `ffmpeg` và `ffprobe` trong PATH, và kết n
 |------|------------------------|
 | 1. Tạo dự án | Nút **+ Dự án mới** ở thanh trên (hoặc menu tên dự án) |
 | 2. Cho nội dung vào | **Dán văn bản** ở cột giữa — dán cả bài, hệ thống tự cắt thành nhịp |
-| 3. Chọn ảnh/video | Cột trái: kéo thả file vào, hoặc **Chọn file…**, hoặc **Duyệt theo thư mục** (xem mục 3) |
+| 3. Chọn ảnh/video | Cột trái: kéo thả file vào, hoặc bấm **Chọn file từ máy…** |
 | 4. Gán hình cho từng nhịp | Kéo ảnh từ thư viện thả vào ô hình của nhịp (bấm vào ô hình để đổi nhanh) |
 | 5. Bấm **Tạo video** | Cột phải hiện tiến trình; xong thì có player + nút mở thư mục chứa file |
 
 Mọi thay đổi **tự lưu** sau ~0,7 giây. Góc trên hiện "Đang lưu…" rồi "Đã lưu".
+
+Nút mặt trăng trên thanh trên đổi sang **nền tối**; lựa chọn được nhớ cho lần sau.
+Mặc định luôn là nền sáng, không phụ thuộc cài đặt của Windows.
 
 ---
 
@@ -59,20 +62,6 @@ liên tục suốt cả cảnh, không giật lại khi chữ đổi. Nhịp nà
 - **Ảnh** — tự động Ken Burns (zoom + trôi chậm), mỗi cảnh một kiểu khác nhau.
 - **Video** — chạy thật, luôn tắt tiếng. Đặt `mediaStartSec` trong `project.json`
   nếu muốn bắt đầu từ giữa clip.
-
-### Hộp thoại duyệt file
-Bấm **Duyệt theo thư mục trong máy** để mở trình chọn file:
-
-- **Truy cập nhanh** bên trái: Desktop, Downloads, Pictures, Videos, Documents
-- **Breadcrumb** bấm được ở trên (`C: › Users › … › Downloads`), nút mũi tên để lên
-  một cấp, nút bút chì để gõ thẳng đường dẫn
-- **Ô lọc** theo tên
-- **Ảnh xem trước** cho cả ảnh lẫn video (khung hình đầu), kèm tên và dung lượng
-- **Chọn nhiều file**: bấm để tick, bấm đúp để thêm ngay. Nút dưới cùng hiện
-  số file đang chọn
-
-Thư mục chỉ liệt kê ảnh và video, không hiện file khác. Ảnh xem trước được cache
-trong `.cache/browse-thumbs/` nên mở lại thư mục lớn không phải dựng lại.
 
 ### Độ phân giải ảnh
 Nửa trên khung hình là 1080×1072 (gần vuông) và ảnh được phủ kín theo kiểu
