@@ -44,54 +44,88 @@ export async function layTinMoi(
   tuKhoa: string,
   soLuong = 10,
 ): Promise<{ items: TinTuc[]; cuaSoGio: number }> {
+  /*
+   * Hai kiểu truy vấn, gộp lại:
+   *   - không lọc thời gian  -> đúng chủ đề gần như tuyệt đối, nhưng lẫn bài cũ
+   *   - qft=interval + sortby -> tươi, nhưng Bing nới chủ đề rất rộng (đo thực
+   *     tế chỉ 10/29 bài còn nhắc tới từ khoá)
+   * Gộp rồi tự lọc thì được cả hai: vừa đúng chủ đề vừa mới.
+   */
+  const bienThe = ["", "&sortby=date&qft=interval%3d%227%22"];
   const trang = [1, 11, 21, 31];
-  const meTin = await Promise.all(trang.map((f) => layMotTrang(tuKhoa, f).catch(() => [])));
+  const yeuCau = bienThe.flatMap((b) => trang.map((f) => layMotTrang(tuKhoa, f, b).catch(() => [])));
+  const meTin = await Promise.all(yeuCau);
 
-  // gộp lại, bỏ trùng theo URL
   const theoUrl = new Map<string, TinTuc>();
   for (const me of meTin) {
     for (const t of me) if (!theoUrl.has(t.link)) theoUrl.set(t.link, t);
   }
-  const ro = [...theoUrl.values()];
 
-  /**
-   * Chỉ lấy tin MỚI. Ưu tiên trong ngày; hôm nào ít tin quá thì nới dần cửa sổ
-   * ra 2 rồi 7 ngày, chứ trả về danh sách rỗng thì người dùng không làm gì được.
-   */
+  // Lọc đúng chủ đề — bắt buộc, không có ngoại lệ. Thà ít tin còn hơn đưa bài
+  // chẳng liên quan gì.
+  const tuKhoaChinh = tuChinh(tuKhoa);
+  const ro = [...theoUrl.values()].filter((t) => hopChuDe(t, tuKhoaChinh));
+
   const gio = (t: TinTuc) => {
     const ms = Date.parse(t.pubDate);
     return Number.isFinite(ms) ? (Date.now() - ms) / 3_600_000 : Infinity;
   };
   let chon: TinTuc[] = [];
   let cuaSo = 0;
-  for (const h of [24, 48, 24 * 7]) {
+  for (const h of [24, 48, 24 * 7, 24 * 30]) {
     cuaSo = h;
     chon = ro.filter((t) => gio(t) <= h);
     if (chon.length >= soLuong) break;
   }
-  // không tin nào có ngày đọc được thì dùng cả rổ
   if (chon.length === 0) chon = ro;
 
-  // xáo trộn (Fisher–Yates) rồi lấy đủ số cần
   for (let i = chon.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [chon[i], chon[j]] = [chon[j], chon[i]];
   }
-  // mới nhất lên trước cho dễ nhìn, nhưng thứ tự đã được bốc ngẫu nhiên từ trước
   const ra = chon.slice(0, soLuong);
   ra.sort((a, b) => gio(a) - gio(b));
   return { items: ra, cuaSoGio: cuaSo };
 }
 
+/** Bỏ dấu để so khớp không phụ thuộc cách gõ. */
+const boDau = (s: string) =>
+  s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "d").toLowerCase();
+
+/**
+ * Những từ thực sự mang nghĩa trong câu tìm kiếm.
+ *
+ * "tin mới ielts" thì chỉ "ielts" mới đáng để lọc — mấy từ như "tin", "mới"
+ * xuất hiện ở mọi bài báo nên lọc theo chúng là vô nghĩa.
+ */
+function tuChinh(tuKhoa: string): string[] {
+  const bo = new Set([
+    "tin", "moi", "nhat", "hom", "nay", "bai", "bao", "viet", "ve", "cua", "va",
+    "the", "gioi", "trong", "ngay", "news", "latest", "today", "the",
+  ]);
+  return boDau(tuKhoa)
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= 3 && !bo.has(t));
+}
+
+/** Tiêu đề hoặc đường dẫn phải nhắc tới MỌI từ chính thì mới nhận. */
+function hopChuDe(t: TinTuc, tuChinhList: string[]): boolean {
+  if (tuChinhList.length === 0) return true;
+  const noi = boDau(t.title + " " + t.link);
+  return tuChinhList.every((tu) => noi.includes(tu));
+}
+
 /** Một trang kết quả RSS. `first` là vị trí bắt đầu, Bing đếm từ 1. */
-async function layMotTrang(tuKhoa: string, first: number): Promise<TinTuc[]> {
+async function layMotTrang(tuKhoa: string, first: number, bienThe = ""): Promise<TinTuc[]> {
   // qft=interval="7" + sortby=date là mấu chốt: mặc định Bing trộn cả bài cũ
   // hàng năm trời (đo thử: chỉ 2/12 bài trong 24 giờ), thêm hai tham số này thì
   // lên 23/30 bài trong 24 giờ.
   const url =
     "https://www.bing.com/news/search?q=" +
     encodeURIComponent(tuKhoa) +
-    '&format=RSS&setmkt=vi-VN&setlang=vi&sortby=date&qft=interval%3d%227%22&first=' +
+    "&format=RSS&setmkt=vi-VN&setlang=vi" +
+    bienThe +
+    "&first=" +
     first;
   const { data } = await axios.get<string>(url, {
     timeout: 25000,

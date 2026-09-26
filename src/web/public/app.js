@@ -487,10 +487,24 @@ function renderBeats() {
         thumb.textContent = "không đọc được ảnh";
       };
       thumb.append(img, el("span", "kindtag", meta.kind === "video" ? "VIDEO" : "ẢNH"));
+
+      // Nút bỏ ảnh ngay trên góc — việc hay làm nhất, không bắt mở bảng chọn.
+      const boAnh = el("button", "thumb-x");
+      boAnh.append(icon(ICON.x));
+      boAnh.title = "Bỏ ảnh khỏi nhịp này";
+      boAnh.onclick = (e) => {
+        e.stopPropagation();
+        b.mediaKey = "";
+        renderBeats();
+        touch();
+      };
+      thumb.append(boAnh);
     } else {
       thumb.textContent = "Kéo media vào đây";
     }
-    thumb.title = "Kéo media từ thư viện thả vào, hoặc bấm để đổi sang media kế tiếp";
+    thumb.title = meta
+      ? "Bấm để chọn ảnh khác, hoặc kéo media từ thư viện thả vào"
+      : "Bấm để chọn ảnh, hoặc kéo media từ thư viện thả vào";
     thumb.onclick = (e) => moBangChon(b, e.currentTarget);
     body.append(thumb);
 
