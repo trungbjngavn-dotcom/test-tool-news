@@ -1,4 +1,4 @@
-# Video Studio — tạo bản tin dọc từ text + ảnh/video trong máy
+# Tool News — tạo bản tin dọc từ text + ảnh/video trong máy
 
 Web app chạy ngay trên máy bạn. Bạn gõ (hoặc dán) nội dung, chọn ảnh/video có sẵn
 trong máy, bấm một nút và nhận về file MP4 dọc 1080×1920 đúng kiểu bản tin:
@@ -145,13 +145,47 @@ nội dung câu + giọng + tốc độ + cao độ, ví dụ `b1-6d32dd5676.wav
 
 ---
 
-## 6. Lấy nội dung từ bài báo
+## 6. Ba cách tự điền dự án
 
-Dán link vào ô **Lấy từ bài báo** → hệ thống đọc tiêu đề, ngày, các đoạn văn và
-ảnh trong bài. Từ đó bạn có thể:
-- chọn ảnh rồi **Tải ảnh đã chọn về thư viện**,
-- bấm **Dùng tiêu đề làm card mở đầu**,
-- bấm từng câu để thêm thành nhịp.
+Không phải copy-paste từng câu và từng ảnh nữa — ba mục đầu ở cột trái đều dựng
+sẵn cả dự án, bạn chỉ việc sửa lại cho gọn.
+
+### Tin mới hôm nay
+Gõ từ khoá (mặc định `tin mới ielts`) rồi bấm **Lấy tin** — ra 10 bài mới nhất
+kèm tên báo. Bấm một tin là dựng luôn dự án có sẵn chữ và ảnh của bài đó.
+
+Nguồn là **Bing News RSS**, không phải Google News: Google bọc link trong một
+token mờ phải gọi API riêng của họ mới gỡ được, rất dễ vỡ; Bing nhúng thẳng URL
+thật vào tham số `url=`.
+
+### Từ link bài báo
+Dán link rồi bấm **Dựng**. Card mở đầu lấy từ tiêu đề, các nhịp cắt từ nội dung,
+ảnh trong bài tải về và rải đều cho các nhịp, dòng nguồn tự điền tên báo.
+
+Link Google News dán thẳng vào sẽ báo lỗi — mở bài rồi copy link của báo gốc.
+
+### Từ file bảng
+Chọn `.xlsx` / `.csv` / `.tsv`, hoặc dán link Google Sheets.
+
+| Cột | Tên nhận được |
+|-----|---------------|
+| Chữ hiển thị | `chữ`, `text`, `nội dung`, `câu` |
+| Giọng đọc | `giọng`, `vo`, `đọc`, `lời bình` |
+| Ảnh | `ảnh`, `image`, `img`, `hình`, `media`, `url` |
+
+Không phân biệt hoa thường, không cần dấu. Ô ảnh nhận **cả link lẫn đường dẫn
+file trong máy**. Không có hàng tiêu đề thì cột 1 là chữ, cột 2 là ảnh.
+Bỏ trống cột giọng đọc thì lấy luôn chữ hiển thị.
+
+---
+
+## 7. Dự án thủ công
+
+Ba mục còn lại gom trong nhóm **Dự án thủ công** (bấm để xổ ra):
+
+- **Ảnh & video** — kho media, kéo thả từ đây sang từng nhịp
+- **Giọng đọc** — chọn giọng, tốc độ, cao độ, nghe thử
+- **Thương hiệu & outro** — dòng nguồn, logo, clip outro
 
 ---
 
