@@ -54,7 +54,9 @@ npm run desktop:dev
 npm run desktop:build
 ```
 
-Bộ cài nằm ở `desktop/src-tauri/target/release/bundle/nsis/`.
+Bộ cài nằm ở `<CARGO_TARGET_DIR>/release/bundle/nsis/Video Studio_1.0.0_x64-setup.exe`
+— với biến ở trên thì là `C:ust-buildideo-studioeleaseundle
+sis\`.
 
 ---
 
@@ -67,7 +69,7 @@ phải biên dịch rồi *chạy* build script. Nhưng không phải chặn c�
 là dự án nằm trong `Downloads`, Windows soi thư mục này ngặt hơn. Cách xử lý:
 
 ```bash
-set CARGO_TARGET_DIR=C:ust-buildideo-studio
+set CARGO_TARGET_DIR=C:\rust-build\video-studio
 ```
 
 Không cần tắt Smart App Control (mà tắt rồi thì **không bật lại được** nếu không
@@ -75,12 +77,12 @@ cài mới Windows).
 
 **2. `EISDIR: illegal operation on a directory, lstat 'C:'`**
 
-Tauri trả đường dẫn resource dưới dạng UNC mở rộng `\?\C:\...`. Node không
+Tauri trả đường dẫn resource dưới dạng UNC mở rộng `\\?\C:\...`. Node không
 hiểu dạng này, tách nhầm rồi chết ngay khi khởi động. Hàm `duong_dan_thuong()`
 trong `main.rs` cắt tiền tố đó trước khi truyền sang Node.
 
 Lỗi này chỉ lộ ra ở bản release vì bản đó ẩn console — nên `main.rs` ghi log ra
-`%APPDATA%n.videostudio.app\server.log`. Cứ có vấn đề thì đọc file đó trước.
+`%APPDATA%\vn.videostudio.app\server.log`. Cứ có vấn đề thì đọc file đó trước.
 
 ---
 
