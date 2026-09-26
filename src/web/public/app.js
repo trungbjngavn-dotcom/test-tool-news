@@ -252,9 +252,9 @@ function renderMedia() {
 
   for (const [key, m] of entries) {
     const item = el("div", "media-item");
-    item.draggable = true;
     item.dataset.key = key;
     item.title = "Kéo thả vào một nhịp để dùng";
+    keoBangConTro(item, key);
 
     const img = el("img");
     img.src = fileUrl(`assets/media/${key}-thumb.jpg`);
@@ -288,10 +288,6 @@ function renderMedia() {
     };
     item.append(del);
 
-    item.ondragstart = (e) => {
-      e.dataTransfer.setData("text/media-key", key);
-      e.dataTransfer.effectAllowed = "copy";
-    };
     grid.append(item);
   }
 
@@ -389,6 +385,7 @@ function renderBeats() {
     const chained = prev && b.mediaKey && prev.mediaKey === b.mediaKey;
 
     const card = el("div", "beat" + (b.kind === "title" ? " is-title" : ""));
+    card.dataset.index = String(i);
 
     // ── đầu thẻ ──────────────────────────────────────
     const head = el("div", "beat-head");
@@ -455,32 +452,17 @@ function renderBeats() {
     );
     card.append(head);
 
-    // Thẻ nhận hai loại thả: nhịp khác (đổi thứ tự) và media (gán hình).
-    // Cho cả thẻ nhận media chứ không chỉ ô hình 104px — nhắm vào ô nhỏ đó khó.
+    // Thẻ nhận thả NHỊP KHÁC để đổi thứ tự. Media thì không đi qua đây nữa:
+    // đã chuyển sang kéo bằng con trỏ (xem keoBangConTro).
     card.ondragover = (e) => {
-      const types = [...e.dataTransfer.types];
-      if (types.includes("text/beat-index")) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        card.classList.add("drag-over");
-      } else if (types.includes("text/media-key")) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "copy";
-        card.classList.add("drag-over");
-      }
+      if (![...e.dataTransfer.types].includes("text/beat-index")) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      card.classList.add("drag-over");
     };
     card.ondragleave = () => card.classList.remove("drag-over");
     card.ondrop = (e) => {
       card.classList.remove("drag-over");
-
-      const mediaKey = e.dataTransfer.getData("text/media-key");
-      if (mediaKey) {
-        e.preventDefault();
-        b.mediaKey = mediaKey;
-        renderBeats(); touch();
-        return;
-      }
-
       const from = e.dataTransfer.getData("text/beat-index");
       if (from === "") return;
       e.preventDefault();
@@ -509,23 +491,7 @@ function renderBeats() {
       thumb.textContent = "Kéo media vào đây";
     }
     thumb.title = "Kéo media từ thư viện thả vào, hoặc bấm để đổi sang media kế tiếp";
-    thumb.onclick = () => cycleMedia(b);
-    // Nguồn kéo đặt effectAllowed="copy"; nếu đích không đặt dropEffect khớp
-    // thì Chrome tự quy về "none" và KHÔNG bắn sự kiện drop.
-    thumb.ondragover = (e) => {
-      if (!keoMedia(e)) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "copy";
-      thumb.classList.add("drag-over");
-    };
-    thumb.ondragleave = () => thumb.classList.remove("drag-over");
-    thumb.ondrop = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      thumb.classList.remove("drag-over");
-      const key = e.dataTransfer.getData("text/media-key");
-      if (key) { b.mediaKey = key; renderBeats(); touch(); }
-    };
+    thumb.onclick = (e) => moBangChon(b, e.currentTarget);
     body.append(thumb);
 
     const fields = el("div", "beat-fields");
@@ -623,14 +589,161 @@ function renderBeats() {
   });
 }
 
-/** Bấm vào thumbnail để xoay vòng qua các media trong thư viện. */
-function cycleMedia(beat) {
+/* ═══════════════ kéo media bằng con trỏ + bảng chọn ảnh ═══════════════════
+   Trước dùng kéo-thả HTML5 nhưng nó phụ thuộc dataTransfer và việc trình duyệt
+   tự thương lượng dropEffect — hay im lặng không bắn sự kiện drop. Kéo bằng
+   pointer event thì mình tự kiểm soát hoàn toàn, chạy chắc. */
+
+let dangKeo = null;
+
+/** Cho một ô media kéo được sang thẻ nhịp. */
+function keoBangConTro(item, key) {
+  item.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || e.target.closest(".del")) return;
+    e.preventDefault();
+    const batDau = { x: e.clientX, y: e.clientY };
+    let bong = null;
+
+    const di = (ev) => {
+      if (!bong) {
+        // chỉ coi là kéo khi đã đi quá 5px, tránh nhầm với cú bấm
+        if (Math.hypot(ev.clientX - batDau.x, ev.clientY - batDau.y) < 5) return;
+        bong = taoBong(item);
+        dangKeo = key;
+        document.body.classList.add("dang-keo-media");
+      }
+      bong.style.left = ev.clientX + "px";
+      bong.style.top = ev.clientY + "px";
+      to(ev.clientX, ev.clientY);
+    };
+
+    const xong = (ev) => {
+      item.releasePointerCapture?.(e.pointerId);
+      window.removeEventListener("pointermove", di);
+      window.removeEventListener("pointerup", xong);
+      window.removeEventListener("pointercancel", xong);
+      document.body.classList.remove("dang-keo-media");
+      bong?.remove();
+      const dich = bong ? beatDuoiConTro(ev.clientX, ev.clientY) : null;
+      to(-1, -1);
+      dangKeo = null;
+      if (!dich) return;
+      const b = state.project.beats[Number(dich.dataset.index)];
+      if (!b) return;
+      b.mediaKey = key;
+      renderBeats();
+      touch();
+      toast("Đã gán ảnh cho nhịp " + (Number(dich.dataset.index) + 1) + ".", "ok");
+    };
+
+    item.setPointerCapture?.(e.pointerId);
+    window.addEventListener("pointermove", di);
+    window.addEventListener("pointerup", xong);
+    window.addEventListener("pointercancel", xong);
+  });
+}
+
+/** Ảnh mờ bay theo con trỏ cho biết đang kéo cái gì. */
+function taoBong(item) {
+  const b = el("div", "bong-keo");
+  const img = item.querySelector("img");
+  if (img) {
+    const c = el("img");
+    c.src = img.src;
+    b.append(c);
+  }
+  document.body.append(b);
+  return b;
+}
+
+/** Thẻ nhịp nằm dưới con trỏ, nếu có. */
+function beatDuoiConTro(x, y) {
+  const n = document.elementFromPoint(x, y);
+  return n ? n.closest(".beat") : null;
+}
+
+/** Tô sáng thẻ nhịp đang nhắm tới. */
+function to(x, y) {
+  const dich = x < 0 ? null : beatDuoiConTro(x, y);
+  for (const c of $$(".beat.nhan-tha")) if (c !== dich) c.classList.remove("nhan-tha");
+  if (dich) dich.classList.add("nhan-tha");
+}
+
+/**
+ * Bảng chọn ảnh cho một nhịp: xem trước toàn bộ thư viện, bấm để chọn, kèm nút
+ * bỏ ảnh. Trước đây bấm vào ô hình chỉ xoay vòng sang ảnh kế tiếp — muốn lấy
+ * đúng một ảnh phải bấm nhiều lần và không có cách nào bỏ ảnh ra.
+ */
+function moBangChon(beat, neo) {
+  document.querySelector(".bang-chon")?.remove();
+
   const keys = Object.keys(state.project.media ?? {});
-  if (!keys.length) return toast("Thư viện chưa có media — thêm ảnh hoặc video trước.");
-  const cur = keys.indexOf(beat.mediaKey);
-  beat.mediaKey = keys[(cur + 1) % keys.length];
-  renderBeats();
-  touch();
+  const bang = el("div", "bang-chon");
+
+  const dau = el("div", "bc-dau");
+  dau.append(el("span", null, "Chọn ảnh cho nhịp này"));
+  const dong = el("button", "btn btn--icon");
+  dong.append(icon(ICON.x));
+  dong.onclick = () => bang.remove();
+  dau.append(dong);
+  bang.append(dau);
+
+  if (!keys.length) {
+    bang.append(el("p", "note", "Thư viện chưa có ảnh. Thêm ở mục “Dự án thủ công”."));
+  } else {
+    const luoi = el("div", "bc-luoi");
+    for (const k of keys) {
+      const m = state.project.media[k];
+      const o = el("button", "bc-o" + (k === beat.mediaKey ? " dang-dung" : ""));
+      const img = el("img");
+      img.src = fileUrl(`assets/media/${k}-thumb.jpg`);
+      img.alt = "";
+      img.onerror = () => img.remove();
+      o.append(img, el("span", "bc-nhan", m.kind === "video" ? "VIDEO" : "ẢNH"));
+      o.onclick = () => {
+        beat.mediaKey = k;
+        bang.remove();
+        renderBeats();
+        touch();
+      };
+      luoi.append(o);
+    }
+    bang.append(luoi);
+  }
+
+  const xoa = el("button", "btn btn--soft btn--sm btn--wide", "Bỏ ảnh khỏi nhịp này");
+  xoa.disabled = !beat.mediaKey;
+  xoa.onclick = () => {
+    beat.mediaKey = "";
+    bang.remove();
+    renderBeats();
+    touch();
+  };
+  bang.append(xoa);
+
+  document.body.append(bang);
+  datViTri(bang, neo);
+
+  // bấm ra ngoài thì đóng
+  setTimeout(() => {
+    const ngoai = (ev) => {
+      if (!bang.contains(ev.target)) { bang.remove(); document.removeEventListener("pointerdown", ngoai); }
+    };
+    document.addEventListener("pointerdown", ngoai);
+  }, 0);
+}
+
+/** Đặt bảng cạnh ô hình, tự lùi vào nếu chạm mép màn hình. */
+function datViTri(bang, neo) {
+  const r = neo.getBoundingClientRect();
+  const w = bang.offsetWidth || 260;
+  const h = bang.offsetHeight || 300;
+  let x = r.right + 8;
+  let y = r.top;
+  if (x + w > innerWidth - 8) x = Math.max(8, r.left - w - 8);
+  if (y + h > innerHeight - 8) y = Math.max(8, innerHeight - h - 8);
+  bang.style.left = x + "px";
+  bang.style.top = y + "px";
 }
 
 // ───────────────────────────────────────────── cài đặt chung
@@ -799,8 +912,6 @@ on("#fileInput", "change", async (e) => {
 
 // kéo thả file vào cả cửa sổ
 const hasFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes("Files");
-/** Đang kéo một media từ thư viện (không phải file từ ngoài vào). */
-const keoMedia = (e) => [...(e.dataTransfer?.types ?? [])].includes("text/media-key");
 
 /* dragenter/dragleave bắn liên tục khi con trỏ đi qua từng phần tử con, nên
    đếm độ sâu thay vì tắt ngay ở lần dragleave đầu tiên. */
@@ -966,9 +1077,13 @@ async function layTinMoi() {
   nut.disabled = true;
   nut.textContent = "Đang lấy…";
   try {
-    const { items } = await api(`/api/news?q=${encodeURIComponent(q)}`);
+    const { items, cuaSoGio } = await api(`/api/news?q=${encodeURIComponent(q)}`);
     veTin(items);
     $("#newsCount").textContent = String(items.length);
+    // nói rõ đã phải nới cửa sổ thời gian hay chưa, để khỏi tưởng toàn tin hôm nay
+    $("#newsWindow").textContent = items.length
+      ? cuaSoGio <= 24 ? "Tin trong 24 giờ qua." : `Hôm nay chưa đủ tin, đang lấy trong ${Math.round(cuaSoGio / 24)} ngày qua.`
+      : "";
     if (!items.length) toast("Không tìm thấy tin nào cho từ khoá này.");
   } catch (e) {
     fail(e);

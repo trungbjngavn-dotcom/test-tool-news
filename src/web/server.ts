@@ -375,8 +375,9 @@ app.post("/api/projects/:id/badge", async (req) => {
 /** Danh sách tin mới theo từ khoá, mặc định "tin mới ielts". */
 app.get("/api/news", async (req) => {
   const { q, limit } = req.query as { q?: string; limit?: string };
-  const items = await layTinMoi(q?.trim() || "tin mới ielts", Number(limit) || 10);
-  return { q: q?.trim() || "tin mới ielts", items };
+  const tuKhoa = q?.trim() || "tin mới ielts";
+  const { items, cuaSoGio } = await layTinMoi(tuKhoa, Number(limit) || 10);
+  return { q: tuKhoa, items, cuaSoGio };
 });
 
 /**
@@ -401,6 +402,11 @@ app.post("/api/projects/from-article", async (req) => {
   }
 
   const kb = kichBanTuBaiBao(ex);
+  // Chỉ có card mở đầu nghĩa là không moi được câu nào — tạo dự án rỗng chỉ
+  // tổ làm rác, báo lỗi để người dùng chọn bài khác.
+  if (kb.beats.length < 2) {
+    throw new HttpError(422, "Bài này không lấy được nội dung (trang dựng bằng JavaScript). Thử bài khác.");
+  }
   const { id } = await taoDuAn(kb.tieuDe);
 
   const khoa = await taiAnhVaoDuAn(id, kb.anh);

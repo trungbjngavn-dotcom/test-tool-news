@@ -12,7 +12,7 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
 
-import { extractArticle, splitToBeatText, type Extracted } from "./extract.js";
+import { extractArticle, type Extracted } from "./extract.js";
 import type { Beat } from "../newsroom/types.js";
 
 const UA =
@@ -35,12 +35,64 @@ export interface TinTuc {
  * Dùng Bing News RSS chứ không dùng Google News: Google bọc link trong một token
  * mờ (`CBMi...`) phải gọi API riêng của họ mới gỡ được, rất dễ vỡ. Bing nhúng
  * thẳng URL thật vào tham số `url=` nên chỉ cần tách chuỗi truy vấn.
+ *
+ * Một trang RSS chỉ trả ~11 bài và luôn cùng một thứ tự, bấm lại là y hệt. Nên
+ * gom nhiều trang (`first=`) thành một rổ rồi bốc ngẫu nhiên — mỗi lần bấm ra
+ * một mẻ khác.
  */
-export async function layTinMoi(tuKhoa: string, soLuong = 10): Promise<TinTuc[]> {
+export async function layTinMoi(
+  tuKhoa: string,
+  soLuong = 10,
+): Promise<{ items: TinTuc[]; cuaSoGio: number }> {
+  const trang = [1, 11, 21, 31];
+  const meTin = await Promise.all(trang.map((f) => layMotTrang(tuKhoa, f).catch(() => [])));
+
+  // gộp lại, bỏ trùng theo URL
+  const theoUrl = new Map<string, TinTuc>();
+  for (const me of meTin) {
+    for (const t of me) if (!theoUrl.has(t.link)) theoUrl.set(t.link, t);
+  }
+  const ro = [...theoUrl.values()];
+
+  /**
+   * Chỉ lấy tin MỚI. Ưu tiên trong ngày; hôm nào ít tin quá thì nới dần cửa sổ
+   * ra 2 rồi 7 ngày, chứ trả về danh sách rỗng thì người dùng không làm gì được.
+   */
+  const gio = (t: TinTuc) => {
+    const ms = Date.parse(t.pubDate);
+    return Number.isFinite(ms) ? (Date.now() - ms) / 3_600_000 : Infinity;
+  };
+  let chon: TinTuc[] = [];
+  let cuaSo = 0;
+  for (const h of [24, 48, 24 * 7]) {
+    cuaSo = h;
+    chon = ro.filter((t) => gio(t) <= h);
+    if (chon.length >= soLuong) break;
+  }
+  // không tin nào có ngày đọc được thì dùng cả rổ
+  if (chon.length === 0) chon = ro;
+
+  // xáo trộn (Fisher–Yates) rồi lấy đủ số cần
+  for (let i = chon.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [chon[i], chon[j]] = [chon[j], chon[i]];
+  }
+  // mới nhất lên trước cho dễ nhìn, nhưng thứ tự đã được bốc ngẫu nhiên từ trước
+  const ra = chon.slice(0, soLuong);
+  ra.sort((a, b) => gio(a) - gio(b));
+  return { items: ra, cuaSoGio: cuaSo };
+}
+
+/** Một trang kết quả RSS. `first` là vị trí bắt đầu, Bing đếm từ 1. */
+async function layMotTrang(tuKhoa: string, first: number): Promise<TinTuc[]> {
+  // qft=interval="7" + sortby=date là mấu chốt: mặc định Bing trộn cả bài cũ
+  // hàng năm trời (đo thử: chỉ 2/12 bài trong 24 giờ), thêm hai tham số này thì
+  // lên 23/30 bài trong 24 giờ.
   const url =
     "https://www.bing.com/news/search?q=" +
     encodeURIComponent(tuKhoa) +
-    "&format=RSS&setmkt=vi-VN&setlang=vi";
+    '&format=RSS&setmkt=vi-VN&setlang=vi&sortby=date&qft=interval%3d%227%22&first=' +
+    first;
   const { data } = await axios.get<string>(url, {
     timeout: 25000,
     headers: { "User-Agent": UA },
@@ -49,10 +101,7 @@ export async function layTinMoi(tuKhoa: string, soLuong = 10): Promise<TinTuc[]>
 
   const $ = cheerio.load(data, { xmlMode: true });
   const ra: TinTuc[] = [];
-  const daCo = new Set<string>();
-
   $("item").each((_, el) => {
-    if (ra.length >= soLuong) return;
     const $e = $(el);
     const title = $e.find("title").text().trim();
     const boc = $e.find("link").text().trim();
@@ -60,23 +109,22 @@ export async function layTinMoi(tuKhoa: string, soLuong = 10): Promise<TinTuc[]>
 
     const that = goLinkBing(boc);
     if (!that) return;
-    // cùng một tin hay được nhiều báo đăng lại; bỏ trùng theo URL
-    if (daCo.has(that)) return;
-    daCo.add(that);
 
     let nguon = "";
-    try { nguon = new URL(that).hostname.replace(/^www\./, ""); } catch { /* bỏ qua */ }
+    try { nguon = new URL(that).hostname.replace(/^www[.]/, ""); } catch { /* bỏ qua */ }
+    if (!nguon || TRANG_BO_QUA.some((re) => re.test(nguon))) return;
 
-    ra.push({
-      title,
-      link: that,
-      linkBoc: boc,
-      source: nguon,
-      pubDate: $e.find("pubDate").text().trim(),
-    });
+    ra.push({ title, link: that, linkBoc: boc, source: nguon, pubDate: $e.find("pubDate").text().trim() });
   });
   return ra;
 }
+
+/**
+ * Các trang chỉ đăng lại và dựng nội dung bằng JavaScript — tải HTML về chỉ
+ * được cái khung rỗng, dựng ra dự án không có chữ nào. Loại khỏi danh sách cho
+ * người dùng khỏi bấm trúng.
+ */
+const TRANG_BO_QUA = [/(^|[.])msn[.]com$/i, /(^|[.])news[.]google[.]com$/i, /(^|[.])baomoi[.]com$/i];
 
 /** Bing bọc link trong apiclick.aspx?...&url=<link thật>. */
 function goLinkBing(boc: string): string | null {
@@ -98,15 +146,72 @@ export interface KichBan {
   tieuDe: string;
 }
 
+/** Độ dài tối đa một khối chữ trên màn hình, đo từ panel thật. */
+const TOI_DA = 150;
+
 /**
- * Biến một bài báo đã bóc tách thành kịch bản hoàn chỉnh.
+ * Chọn các câu TRỌN VẸN làm nhịp.
  *
- * Nhịp đầu là card mở đầu lấy từ tiêu đề; các nhịp sau là từng đoạn đã cắt vừa
- * khung chữ. Giới hạn số nhịp để video không dài lê thê — người dùng thấy đủ ý
- * rồi tự xoá bớt nhanh hơn là phải tự thêm.
+ * Trước đây dùng chung bộ cắt của phần "dán văn bản": gặp câu dài là chẻ đôi ở
+ * dấu phẩy, nên nhịp 1 hết nửa câu rồi nhịp 2 mới nói nốt — đọc rất cụt. Với
+ * bài báo thì không cần cắt: bài nào cũng thừa câu, chỉ việc BỎ QUA câu quá dài
+ * và lấy câu vừa khung.
+ *
+ * Chỉ khi bài quá ít câu ngắn mới đành rút gọn một câu dài, và rút ở ranh giới
+ * mệnh đề để vẫn đọc ra một ý hoàn chỉnh.
  */
-export function kichBanTuBaiBao(ex: Extracted, soNhipToiDa = 8): KichBan {
+function chonCau(doan: string[], soCan: number): string[] {
+  const tho = doan
+    .flatMap((p) => p.split(/(?<=[.!?…])\s+/))
+    .map((c) => c.trim())
+    .filter((c) => c.length >= 40);
+
+  // Bỏ câu trùng: báo hay lặp lại câu chốt ở sapo rồi nhắc lại trong thân bài,
+  // để nguyên thì hai nhịp đọc y hệt nhau.
+  const daCo = new Set<string>();
+  const cau = tho.filter((c) => {
+    const khoa = c.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    if (daCo.has(khoa)) return false;
+    daCo.add(khoa);
+    return true;
+  });
+
+  // Câu thật thì kết thúc bằng dấu câu. Không có dấu thường là tiêu đề phụ hoặc
+  // chú thích ảnh — vẫn dùng được nhưng để dành, ưu tiên câu hoàn chỉnh trước.
+  const tronVen = (c: string) => /[.!?…"”)]$/.test(c.trim());
+  const vua = cau.filter((c) => c.length <= TOI_DA);
+  const uuTien = [...vua.filter(tronVen), ...vua.filter((c) => !tronVen(c))];
+  if (uuTien.length >= soCan) return uuTien.slice(0, soCan);
+
+  // vẫn thiếu thì đành rút gọn câu dài
+  const them: string[] = [];
+  for (const c of cau) {
+    if (them.length + uuTien.length >= soCan) break;
+    if (c.length <= TOI_DA) continue;
+    const rut = rutGon(c);
+    if (rut && !daCo.has(rut.toLowerCase())) them.push(rut);
+  }
+  return [...uuTien, ...them].slice(0, soCan);
+}
+
+/** Rút một câu dài về trong khung, cắt ở ranh giới mệnh đề. */
+function rutGon(cau: string): string | null {
+  const cat = cau.slice(0, TOI_DA);
+  const moc = Math.max(cat.lastIndexOf(", "), cat.lastIndexOf("; "), cat.lastIndexOf(" - "));
+  if (moc < 60) return null; // cắt ngắn quá thì mất nghĩa, thà bỏ
+  return cat.slice(0, moc).trim().replace(/[,;]$/, "") + ".";
+}
+
+/**
+ * Biến một bài báo đã bóc tách thành kịch bản.
+ *
+ * Số nhịp theo độ dài bài: bài ngắn 3, vừa 4, dài 5 — cộng card mở đầu là 4–6
+ * khối. Trước đây để tối đa 8 nên video lê thê và người dùng phải ngồi xoá bớt.
+ */
+export function kichBanTuBaiBao(ex: Extracted): KichBan {
   const tieuDe = (ex.title || "Bản tin").trim();
+  const tongChu = ex.paragraphs.reduce((n, p) => n + p.length, 0);
+  const soNhip = tongChu < 1200 ? 3 : tongChu < 2500 ? 4 : 5;
 
   const beats: Beat[] = [
     {
@@ -120,8 +225,7 @@ export function kichBanTuBaiBao(ex: Extracted, soNhipToiDa = 8): KichBan {
     },
   ];
 
-  const cau = ex.paragraphs.flatMap((p) => splitToBeatText(p)).slice(0, soNhipToiDa);
-  cau.forEach((t, i) => {
+  chonCau(ex.paragraphs, soNhip).forEach((t, i) => {
     beats.push({
       id: `b${i + 1}`,
       mediaKey: "",
