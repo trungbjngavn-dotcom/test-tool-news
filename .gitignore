@@ -24,3 +24,6 @@ desktop/src-tauri/target/
 desktop/src-tauri/payload/
 desktop/src-tauri/binaries/
 desktop/src-tauri/gen/
+
+# Binary tai ve de dong goi (ffmpeg ~259 MB), khong dua len git
+desktop/src-tauri/vendor/

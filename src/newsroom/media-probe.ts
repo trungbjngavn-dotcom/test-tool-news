@@ -4,9 +4,23 @@ import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
+/**
+ * Đường dẫn tới ffmpeg/ffprobe.
+ *
+ * Trước đây gọi bằng tên trần nên bắt buộc máy phải có ffmpeg trong PATH — máy
+ * dev thì có, máy người dùng bình thường thì không, và app hỏng ngay từ thao tác
+ * thêm ảnh. Bản đóng gói truyền hai biến này trỏ vào binary đi kèm; chạy từ mã
+ * nguồn thì vẫn lấy trong PATH như cũ.
+ */
+const FFMPEG = process.env.HYPERFRAMES_FFMPEG_PATH || "ffmpeg";
+const FFPROBE = process.env.HYPERFRAMES_FFPROBE_PATH || "ffprobe";
+
+/** Đường dẫn có dấu cách phải bọc nháy vì đang chạy qua shell. */
+const boc = (s: string) => (s.includes(" ") && !s.startsWith('"') ? `"${s}"` : s);
+
 function run(cmd: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args, { shell: true, stdio: ["ignore", "pipe", "pipe"] });
+    const proc = spawn(boc(cmd), args, { shell: true, stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     let err = "";
     proc.stdout.on("data", (d) => (out += d));
@@ -19,7 +33,7 @@ function run(cmd: string, args: string[]): Promise<string> {
 }
 
 export async function probeDurationSec(file: string): Promise<number> {
-  const out = await run("ffprobe", [
+  const out = await run(FFPROBE, [
     "-v", "error",
     "-show_entries", "format=duration",
     "-of", "default=nw=1:nk=1",
@@ -32,7 +46,7 @@ export async function probeDurationSec(file: string): Promise<number> {
 
 export async function probeSize(file: string): Promise<{ width: number; height: number } | null> {
   try {
-    const out = await run("ffprobe", [
+    const out = await run(FFPROBE, [
       "-v", "error",
       "-select_streams", "v:0",
       "-show_entries", "stream=width,height",
@@ -47,7 +61,7 @@ export async function probeSize(file: string): Promise<{ width: number; height: 
 }
 
 export async function ffmpegConvert(input: string, output: string, extra: string[] = []): Promise<void> {
-  await run("ffmpeg", ["-v", "error", "-i", `"${input}"`, ...extra, `"${output}"`, "-y"]);
+  await run(FFMPEG, ["-v", "error", "-i", `"${input}"`, ...extra, `"${output}"`, "-y"]);
 }
 
 /**
@@ -64,7 +78,7 @@ export async function ffmpegConvert(input: string, output: string, extra: string
 export async function trimSilence(input: string, output: string): Promise<void> {
   const one =
     "silenceremove=start_periods=1:start_silence=0.04:start_threshold=-42dB:detection=peak";
-  await run("ffmpeg", [
+  await run(FFMPEG, [
     "-v", "error",
     "-i", `"${input}"`,
     "-af", `"${one},areverse,${one},areverse"`,
@@ -77,7 +91,7 @@ export async function trimSilence(input: string, output: string): Promise<void> 
 /** Ảnh đại diện cho giao diện: ảnh thì thu nhỏ, video thì lấy 1 khung. */
 export async function makeThumb(input: string, output: string): Promise<void> {
   await mkdir(path.dirname(output), { recursive: true });
-  await run("ffmpeg", [
+  await run(FFMPEG, [
     "-v", "error",
     "-i", `"${input}"`,
     "-frames:v", "1",
@@ -89,7 +103,7 @@ export async function makeThumb(input: string, output: string): Promise<void> {
 
 /** Ảnh nguồn thường rất lớn; thu về kích thước đủ dùng để render nhanh hơn. */
 export async function normalizeImage(input: string, output: string): Promise<void> {
-  await run("ffmpeg", [
+  await run(FFMPEG, [
     "-v", "error",
     "-i", `"${input}"`,
     "-vf", "scale='min(2400,iw)':-1",

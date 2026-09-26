@@ -55,6 +55,67 @@ async function dirSize(p) {
   return total;
 }
 
+/**
+ * Chép Chrome headless vào payload.
+ *
+ * Không có nó thì lần render đầu trên máy mới phải tải 271 MB: người dùng chỉ
+ * thấy app đứng im rất lâu mà không hiểu vì sao. Nguồn lấy từ cache puppeteer
+ * mà HyperFrames đã tải sẵn trên máy build.
+ */
+async function chepChrome() {
+  const { homedir } = await import("node:os");
+  const nguon = path.join(homedir(), ".cache", "puppeteer", "chrome-headless-shell");
+  if (!existsSync(nguon)) {
+    console.warn(
+      "! chưa có Chrome headless trong cache máy này.\n" +
+        "  Render thử một video bất kỳ để HyperFrames tự tải về, rồi chạy lại lệnh này.\n" +
+        "  Bỏ qua bước chép — bản đóng gói sẽ phải tải Chrome ở lần render đầu.",
+    );
+    return;
+  }
+  console.log("→ chép Chrome headless (~271 MB, hơi lâu)");
+  await cp(nguon, path.join(OUT, "chrome"), { recursive: true });
+}
+
+/** Tìm một lệnh trong PATH, trả về đường dẫn tuyệt đối. */
+function timTrongPath(ten) {
+  for (const d of (process.env.PATH ?? "").split(path.delimiter)) {
+    if (!d) continue;
+    const p = path.join(d.replace(/^"|"$/g, ""), ten);
+    if (existsSync(p)) return p;
+  }
+  return null;
+}
+
+/**
+ * Chép ffmpeg + ffprobe vào payload.
+ *
+ * Máy người dùng bình thường KHÔNG có ffmpeg. Thiếu nó thì app hỏng ngay từ
+ * thao tác thêm ảnh, chứ không phải đợi đến lúc render mới lộ.
+ */
+async function chepFfmpeg() {
+  const ext = process.platform === "win32" ? ".exe" : "";
+  const dich = path.join(OUT, "ffmpeg");
+  await mkdir(dich, { recursive: true });
+
+  // Ưu tiên bản để sẵn trong vendor/ — bản LGPL từ BtbN nhẹ hơn bản "full"
+  // hay cài bằng winget khá nhiều (259 MB so với 424 MB) mà vẫn đủ codec.
+  const vendor = path.join(ROOT, "desktop", "src-tauri", "vendor", "ffmpeg");
+
+  for (const ten of ["ffmpeg", "ffprobe"]) {
+    const nguon =
+      [path.join(vendor, ten + ext), process.env[`${ten.toUpperCase()}_PATH`]].find(
+        (p) => p && existsSync(p),
+      ) ?? timTrongPath(ten + ext);
+    if (!nguon || !existsSync(nguon)) {
+      console.warn(`! không thấy ${ten}${ext} — bản đóng gói sẽ thiếu, app trên máy khác sẽ lỗi`);
+      continue;
+    }
+    console.log(`→ chép ${ten}${ext} từ ${nguon}`);
+    await cp(nguon, path.join(dich, ten + ext));
+  }
+}
+
 async function main() {
   console.log("→ dọn thư mục payload cũ");
   await rm(OUT, { recursive: true, force: true });
@@ -80,7 +141,7 @@ async function main() {
   await writeFile(
     path.join(OUT, "package.json"),
     JSON.stringify(
-      { name: "video-studio-payload", private: true, type: "module", dependencies: pkg.dependencies },
+      { name: "tool-news-payload", private: true, type: "module", dependencies: pkg.dependencies },
       null,
       2,
     ) + "\n",
@@ -97,10 +158,15 @@ async function main() {
   const ext = process.platform === "win32" ? ".exe" : "";
   await cp(process.execPath, path.join(BIN, `node-${triple}${ext}`));
 
+  await chepChrome();
+  await chepFfmpeg();
+
   console.log("\nxong. dung lượng:");
   for (const [ten, p] of [
     ["mã đã biên dịch", path.join(OUT, "dist")],
     ["thư viện", path.join(OUT, "node_modules")],
+    ["chrome headless", path.join(OUT, "chrome")],
+    ["ffmpeg", path.join(OUT, "ffmpeg")],
     ["node sidecar", path.join(BIN, `node-${triple}${ext}`)],
   ]) {
     const s = existsSync(p) && (await stat(p)).isFile() ? (await stat(p)).size : await dirSize(p);

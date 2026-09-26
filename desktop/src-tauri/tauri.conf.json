@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Video Studio",
+  "productName": "Tool News",
   "version": "1.0.0",
-  "identifier": "vn.videostudio.app",
+  "identifier": "vn.toolnews.app",
   "build": {
     "frontendDist": "../placeholder"
   },
@@ -37,6 +37,6 @@
       }
     },
     "shortDescription": "Dung ban tin doc tu text va anh/video",
-    "longDescription": "Video Studio — go noi dung, chon anh hoac video trong may, nhan ve file MP4 doc 1080x1920 kieu ban tin."
+    "longDescription": "Tool News — go noi dung, chon anh hoac video trong may, nhan ve file MP4 doc 1080x1920 kieu ban tin."
   }
 }

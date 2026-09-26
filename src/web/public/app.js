@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   Video Studio — giao diện (vanilla JS, không build step)
+   Tool News — giao diện (vanilla JS, không build step)
    ═══════════════════════════════════════════════════════════════════════ */
 
 const $ = (s) => document.querySelector(s);
@@ -58,7 +58,7 @@ function autoGrow(ta, minRows = 2) {
 function on(sel, type, fn) {
   const n = typeof sel === "string" ? $(sel) : sel;
   if (!n) {
-    console.warn("[Video Studio] không tìm thấy phần tử:", sel);
+    console.warn("[Tool News] không tìm thấy phần tử:", sel);
     return null;
   }
   n.addEventListener(type, fn);
@@ -83,7 +83,7 @@ const api = async (url, opts = {}) => {
 
 /* Mặc định sáng. Người dùng chọn tối thì nhớ lại cho lần sau. localStorage có
    thể ném lỗi (chế độ ẩn danh, chặn cookie) nên bọc try/catch. */
-const THEME_KEY = "video-studio-theme";
+const THEME_KEY = "tool-news-theme";
 
 function applyTheme(mode) {
   if (mode === "dark") document.documentElement.setAttribute("data-theme", "dark");
@@ -259,6 +259,9 @@ function renderMedia() {
     const img = el("img");
     img.src = fileUrl(`assets/media/${key}-thumb.jpg`);
     img.alt = "";
+    // <img> mặc định tự kéo được: nắm vào ảnh là trình duyệt kéo CHÍNH tấm ảnh
+    // thay vì cả ô, nên dữ liệu media-key không đi theo. Tắt đi.
+    img.draggable = false;
     img.onerror = () => img.remove();
     const tag = el("span", "tag" + (m.kind === "video" ? " is-video" : ""),
       m.kind === "video" ? "VIDEO" : "ẢNH");
@@ -452,15 +455,32 @@ function renderBeats() {
     );
     card.append(head);
 
-    // thả nhịp khác lên thẻ này để đổi thứ tự
+    // Thẻ nhận hai loại thả: nhịp khác (đổi thứ tự) và media (gán hình).
+    // Cho cả thẻ nhận media chứ không chỉ ô hình 104px — nhắm vào ô nhỏ đó khó.
     card.ondragover = (e) => {
-      if (![...e.dataTransfer.types].includes("text/beat-index")) return;
-      e.preventDefault();
-      card.classList.add("drag-over");
+      const types = [...e.dataTransfer.types];
+      if (types.includes("text/beat-index")) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        card.classList.add("drag-over");
+      } else if (types.includes("text/media-key")) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        card.classList.add("drag-over");
+      }
     };
     card.ondragleave = () => card.classList.remove("drag-over");
     card.ondrop = (e) => {
       card.classList.remove("drag-over");
+
+      const mediaKey = e.dataTransfer.getData("text/media-key");
+      if (mediaKey) {
+        e.preventDefault();
+        b.mediaKey = mediaKey;
+        renderBeats(); touch();
+        return;
+      }
+
       const from = e.dataTransfer.getData("text/beat-index");
       if (from === "") return;
       e.preventDefault();
@@ -490,7 +510,14 @@ function renderBeats() {
     }
     thumb.title = "Kéo media từ thư viện thả vào, hoặc bấm để đổi sang media kế tiếp";
     thumb.onclick = () => cycleMedia(b);
-    thumb.ondragover = (e) => { e.preventDefault(); thumb.classList.add("drag-over"); };
+    // Nguồn kéo đặt effectAllowed="copy"; nếu đích không đặt dropEffect khớp
+    // thì Chrome tự quy về "none" và KHÔNG bắn sự kiện drop.
+    thumb.ondragover = (e) => {
+      if (!keoMedia(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      thumb.classList.add("drag-over");
+    };
     thumb.ondragleave = () => thumb.classList.remove("drag-over");
     thumb.ondrop = (e) => {
       e.preventDefault();
@@ -772,6 +799,8 @@ on("#fileInput", "change", async (e) => {
 
 // kéo thả file vào cả cửa sổ
 const hasFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes("Files");
+/** Đang kéo một media từ thư viện (không phải file từ ngoài vào). */
+const keoMedia = (e) => [...(e.dataTransfer?.types ?? [])].includes("text/media-key");
 
 /* dragenter/dragleave bắn liên tục khi con trỏ đi qua từng phần tử con, nên
    đếm độ sâu thay vì tắt ngay ở lần dragleave đầu tiên. */
@@ -905,90 +934,117 @@ on("#outroInput", "change", async (e) => {
   e.target.value = "";
 });
 
-// lấy nội dung từ bài báo
-on("#btnExtract", "click", async () => {
-  const url = $("#articleUrl").value.trim();
-  if (!url) return;
-  $("#btnExtract").disabled = true;
+// ═══════════════════════ tự điền dự án: tin mới / link / bảng ══════════════
+
+/**
+ * Gọi một endpoint tự dựng dự án rồi mở luôn dự án vừa tạo.
+ * Ba nguồn (tin mới, link bài báo, file bảng) chỉ khác nhau ở cách gửi.
+ */
+async function dungTuNguon(url, opts, dangLam) {
+  const cu = $("#jobState").textContent;
+  $("#jobState").textContent = dangLam + "…";
+  $("#jobState").className = "jobstate run";
   try {
-    showExtract(await api("/api/extract", { method: "POST", body: JSON.stringify({ url }) }));
+    const r = await api(url, opts);
+    await refreshProjects(r.id);
+    $("#jobState").textContent = "Đã dựng dự án";
+    $("#jobState").className = "jobstate ok";
+    toast(`Đã dựng dự án: ${r.soNhip} nhịp, ${r.soAnh} ảnh.`, "ok");
+    return r;
   } catch (e) {
-    fail("Không lấy được bài: " + e.message);
-  } finally {
-    $("#btnExtract").disabled = false;
+    $("#jobState").textContent = cu;
+    $("#jobState").className = "jobstate";
+    fail(e);
+    return null;
   }
+}
+
+// ── tin mới trong ngày ──────────────────────────────────────────────────
+async function layTinMoi() {
+  const q = $("#newsQuery").value.trim() || "tin mới ielts";
+  const nut = $("#btnNews");
+  nut.disabled = true;
+  nut.textContent = "Đang lấy…";
+  try {
+    const { items } = await api(`/api/news?q=${encodeURIComponent(q)}`);
+    veTin(items);
+    $("#newsCount").textContent = String(items.length);
+    if (!items.length) toast("Không tìm thấy tin nào cho từ khoá này.");
+  } catch (e) {
+    fail(e);
+  } finally {
+    nut.disabled = false;
+    nut.textContent = "Lấy tin";
+  }
+}
+
+function veTin(items) {
+  const box = $("#newsList");
+  box.innerHTML = "";
+  items.forEach((it, i) => {
+    const b = el("button", "news-item");
+    b.title = it.link;
+    b.append(el("span", "stt", String(i + 1)));
+    const nd = el("div", "noi-dung");
+    nd.append(el("div", "tieu-de", it.title), el("div", "bao", it.source || ""));
+    b.append(nd);
+    b.onclick = async () => {
+      for (const x of $$(".news-item")) x.disabled = true;
+      b.textContent = "Đang dựng dự án…";
+      await dungTuNguon(
+        "/api/projects/from-article",
+        { method: "POST", body: JSON.stringify({ url: it.link }) },
+        "Dựng từ bài báo",
+      );
+      veTin(items); // vẽ lại để bỏ trạng thái khoá
+    };
+    box.append(b);
+  });
+}
+
+on("#btnNews", "click", layTinMoi);
+on("#newsQuery", "keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); layTinMoi(); } });
+
+// ── từ một link bài báo ─────────────────────────────────────────────────
+async function dungTuLink() {
+  const url = $("#articleUrl").value.trim();
+  if (!url) return fail("Chưa dán link bài báo.");
+  const nut = $("#btnExtract");
+  nut.disabled = true;
+  nut.textContent = "Đang dựng…";
+  const r = await dungTuNguon(
+    "/api/projects/from-article",
+    { method: "POST", body: JSON.stringify({ url }) },
+    "Dựng từ bài báo",
+  );
+  if (r) $("#articleUrl").value = "";
+  nut.disabled = false;
+  nut.textContent = "Dựng";
+}
+on("#btnExtract", "click", dungTuLink);
+on("#articleUrl", "keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); dungTuLink(); } });
+
+// ── từ file bảng ────────────────────────────────────────────────────────
+on("#btnSheet", "click", () => $("#sheetInput").click());
+on("#sheetInput", "change", async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const fd = new FormData();
+  fd.append("file", f);
+  await dungTuNguon("/api/projects/from-sheet", { method: "POST", body: fd }, "Đọc bảng");
+  e.target.value = "";
 });
 
-function showExtract(ex) {
-  const box = $("#extractOut");
-  box.hidden = false;
-  box.innerHTML = "";
-  box.append(el("h4", null, ex.title || "(không có tiêu đề)"));
-  box.append(el("p", "note",
-    `${ex.siteName || "?"} · ${ex.date || "không rõ ngày"} · ${ex.images.length} ảnh · ${ex.suggestedBeats.length} câu`));
-
-  const picked = new Set();
-  const imgs = el("div", "imgs");
-  for (const im of ex.images) {
-    const t = el("img");
-    t.src = im.url;
-    t.alt = "";
-    t.title = im.caption || im.url;
-    t.onclick = () => {
-      t.classList.toggle("sel");
-      if (picked.has(im.url)) picked.delete(im.url);
-      else picked.add(im.url);
-    };
-    imgs.append(t);
-  }
-  box.append(imgs);
-
-  const btnImgs = el("button", "btn btn--soft btn--sm btn--wide", "Tải ảnh đã chọn về thư viện");
-  btnImgs.onclick = async () => {
-    if (!picked.size) return toast("Chưa chọn ảnh nào.");
-    btnImgs.disabled = true;
-    try {
-      const { added } = await api(`/api/projects/${state.id}/media-from-url`, {
-        method: "POST", body: JSON.stringify({ urls: [...picked] }),
-      });
-      applyAdded(added);
-    } catch (e) { fail(e); }
-    finally { btnImgs.disabled = false; }
-  };
-  box.append(btnImgs);
-
-  const btnTitle = el("button", "btn btn--soft btn--sm btn--wide", "Dùng tiêu đề làm card mở đầu");
-  btnTitle.style.marginTop = "7px";
-  btnTitle.onclick = () => {
-    let t0 = state.project.beats.find((b) => b.kind === "title");
-    if (!t0) {
-      t0 = newBeat();
-      state.project.beats.unshift(t0);
-    }
-    t0.kind = "title";
-    t0.date = ex.date;
-    t0.headline = (ex.title || "").toUpperCase().split(/:\s*/).slice(0, 2);
-    t0.vo = ex.title;
-    renderBeats();
-    touch();
-    toast("Đã đặt card mở đầu.", "ok");
-  };
-  box.append(btnTitle);
-
-  box.append(el("p", "note", "Bấm một câu để thêm thành nhịp:"));
-  const ol = el("ol");
-  for (const t of ex.suggestedBeats) {
-    const li = el("li", null, t);
-    li.onclick = () => {
-      state.project.beats.push(newBeat(t));
-      li.classList.add("used");
-      renderBeats();
-      touch();
-    };
-    ol.append(li);
-  }
-  box.append(ol);
-}
+on("#btnSheetUrl", "click", async () => {
+  const url = $("#sheetUrl").value.trim();
+  if (!url) return fail("Chưa dán link bảng.");
+  const r = await dungTuNguon(
+    "/api/projects/from-sheet",
+    { method: "POST", body: JSON.stringify({ url }) },
+    "Đọc bảng",
+  );
+  if (r) $("#sheetUrl").value = "";
+});
 
 // bấm ra vùng nền tối cũng đóng hộp thoại
 for (const d of document.querySelectorAll("dialog")) {

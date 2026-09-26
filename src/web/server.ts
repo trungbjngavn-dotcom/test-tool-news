@@ -17,11 +17,14 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import axios from "axios";
 
-import { ProjectSchema, emptyProject, type Project } from "../newsroom/types.js";
+import { ProjectSchema, emptyProject, type Project, type Beat } from "../newsroom/types.js";
 import { buildProject, runHyperframes, synthVoices } from "../newsroom/pipeline.js";
 import { computeTimeline } from "../newsroom/timeline.js";
 import { makeThumb, normalizeImage, probeDurationSec, probeSize } from "../newsroom/media-probe.js";
 import { extractArticle, splitToBeatText } from "./extract.js";
+import {
+  layTinMoi, kichBanTuBaiBao, docBang, tachCsv, linkSheetSangCsv,
+} from "./autofill.js";
 import { enqueue, getJob, subscribe } from "./jobs.js";
 import { EdgeTtsClient } from "../tts/edge-tts-client.js";
 import { VOICES, RATES, PITCHES } from "../newsroom/voices.js";
@@ -122,8 +125,8 @@ app.get("/api/projects", async () => {
   return out.sort((a, b) => b.updatedAt - a.updatedAt);
 });
 
-app.post("/api/projects", async (req) => {
-  const { title } = (req.body ?? {}) as { title?: string };
+/** Tạo thư mục dự án trống kèm logo mặc định. Dùng chung cho mọi cách tạo. */
+async function taoDuAn(title?: string): Promise<{ id: string; project: Project }> {
   const name = title?.trim() || "Bản tin mới";
   let id = slug(name);
   let n = 1;
@@ -132,13 +135,69 @@ app.post("/api/projects", async (req) => {
   await mkdir(path.join(dirOf(id), "assets", "media"), { recursive: true });
   await mkdir(path.join(dirOf(id), "assets", "brand"), { recursive: true });
   await mkdir(path.join(dirOf(id), "assets", "outro"), { recursive: true });
-  // badge mặc định để dự án mới hiển thị đúng ngay
   if (existsSync(path.join(BUNDLED, "badge.png"))) {
     await copyFile(path.join(BUNDLED, "badge.png"), path.join(dirOf(id), "assets", "brand", "badge.png"));
   }
-  const p = emptyProject(name);
-  await saveProject(id, p);
-  return { id, project: p };
+  const project = emptyProject(name);
+  await saveProject(id, project);
+  return { id, project };
+}
+
+/**
+ * Tải một loạt ảnh từ URL vào dự án, trả về danh sách khoá media theo đúng thứ
+ * tự đầu vào. Ảnh nào tải hỏng thì bỏ qua chứ không làm hỏng cả mẻ.
+ */
+async function taiAnhVaoDuAn(id: string, urls: string[]): Promise<string[]> {
+  const dir = path.join(dirOf(id), "assets", "media");
+  await mkdir(dir, { recursive: true });
+  const khoa: string[] = [];
+
+  for (const [i, u] of urls.entries()) {
+    try {
+      const resp = await axios.get<ArrayBuffer>(u, {
+        responseType: "arraybuffer",
+        timeout: 30000,
+        headers: { "User-Agent": "Mozilla/5.0", Referer: new URL(u).origin },
+      });
+      const key = `m${Date.now().toString(36)}${i}`;
+      const raw = path.join(dir, `${key}-raw`);
+      await writeFile(raw, Buffer.from(resp.data));
+      const finalPath = path.join(dir, `${key}.jpg`);
+      await normalizeImage(raw, finalPath);
+      await rm(raw, { force: true });
+      try { await makeThumb(finalPath, path.join(dir, `${key}-thumb.jpg`)); } catch { /* bỏ qua */ }
+
+      const size = await probeSize(finalPath);
+      const p = await loadProject(id);
+      p.media[key] = {
+        src: `assets/media/${key}.jpg`,
+        kind: "image",
+        position: "50% 50%",
+        mediaStartSec: 0,
+        useSourceAudio: false,
+        width: size?.width,
+        height: size?.height,
+      };
+      await saveProject(id, p);
+      khoa.push(key);
+    } catch {
+      /* ảnh hỏng thì bỏ, dự án vẫn dùng được */
+    }
+  }
+  return khoa;
+}
+
+/** Rải đều media cho các nhịp; ít ảnh hơn nhịp thì dùng lại vòng tròn. */
+function raiAnh(beats: Beat[], khoa: string[]): void {
+  if (khoa.length === 0) return;
+  beats.forEach((b, i) => {
+    b.mediaKey = khoa[i % khoa.length];
+  });
+}
+
+app.post("/api/projects", async (req) => {
+  const { title } = (req.body ?? {}) as { title?: string };
+  return await taoDuAn(title);
 });
 
 app.get("/api/projects/:id", async (req) => {
@@ -310,6 +369,141 @@ app.post("/api/projects/:id/badge", async (req) => {
   await saveProject(id, proj);
   return { src: "assets/brand/badge.png", size };
 });
+
+// ─────────────────────────────────── tin mới trong ngày + tự điền dự án
+
+/** Danh sách tin mới theo từ khoá, mặc định "tin mới ielts". */
+app.get("/api/news", async (req) => {
+  const { q, limit } = req.query as { q?: string; limit?: string };
+  const items = await layTinMoi(q?.trim() || "tin mới ielts", Number(limit) || 10);
+  return { q: q?.trim() || "tin mới ielts", items };
+});
+
+/**
+ * Từ một link bài báo -> dự án điền sẵn chữ và ảnh.
+ *
+ * Dùng cho cả ô "Lấy từ bài báo" lẫn việc bấm vào một tin trong danh sách.
+ * Link của Google News là trang chuyển hướng nên phải gỡ ra link báo gốc trước.
+ */
+app.post("/api/projects/from-article", async (req) => {
+  const { url } = req.body as { url: string };
+  if (!url?.trim()) throw new HttpError(400, "Chưa có link bài báo.");
+
+  const that = url.trim();
+  // Google News bọc link trong token riêng, phải gọi API của họ mới gỡ được —
+  // báo rõ để người dùng lấy link báo gốc thay vì để nó lỗi khó hiểu.
+  if (/news\.google\.com/i.test(that)) {
+    throw new HttpError(400, "Link Google News không dùng trực tiếp được. Mở bài rồi copy link của báo gốc.");
+  }
+  const ex = await extractArticle(that);
+  if (!ex.title && ex.paragraphs.length === 0) {
+    throw new HttpError(422, "Không đọc được nội dung bài này. Thử link khác xem sao.");
+  }
+
+  const kb = kichBanTuBaiBao(ex);
+  const { id } = await taoDuAn(kb.tieuDe);
+
+  const khoa = await taiAnhVaoDuAn(id, kb.anh);
+  raiAnh(kb.beats, khoa);
+
+  const p = await loadProject(id);
+  p.beats = kb.beats;
+  if (ex.siteName) p.brand.sourceLabel = `Nguồn : ${ex.siteName}`;
+  await saveProject(id, p);
+
+  return { id, soNhip: kb.beats.length, soAnh: khoa.length, nguon: that };
+});
+
+/**
+ * Từ một file bảng (csv/tsv/xlsx) hoặc link Google Sheets -> dự án điền sẵn.
+ *
+ * Cột nhận theo tên ở hàng đầu: chữ/text, giọng/vo, ảnh/image. Ô ảnh nhận cả
+ * URL lẫn đường dẫn file trong máy.
+ */
+app.post("/api/projects/from-sheet", async (req) => {
+  let bang: string[][] = [];
+  let ten = "Bản tin từ bảng";
+
+  const ct = String(req.headers["content-type"] ?? "");
+  if (ct.includes("multipart/form-data")) {
+    const file = await (req as any).file();
+    if (!file) throw new HttpError(400, "Chưa chọn file.");
+    ten = String(file.filename ?? ten).replace(/[.][^.]+$/, "");
+    const buf: Buffer = await file.toBuffer();
+    bang = /[.](xlsx|xls)$/i.test(file.filename ?? "")
+      ? await docXlsx(buf)
+      : tachCsv(buf.toString("utf8"));
+  } else {
+    const { url } = (req.body ?? {}) as { url?: string };
+    if (!url?.trim()) throw new HttpError(400, "Chưa có file hay link bảng.");
+    const csv = linkSheetSangCsv(url.trim()) ?? url.trim();
+    const { data } = await axios.get<string>(csv, { timeout: 30000, responseType: "text" });
+    bang = tachCsv(data);
+  }
+
+  const dong = docBang(bang);
+  if (dong.length === 0) throw new HttpError(422, "Bảng không có dòng nào đọc được.");
+
+  const { id } = await taoDuAn(ten);
+
+  // ô ảnh có thể là URL hoặc đường dẫn trong máy; gom lại tải/chép một lượt
+  const urls = [...new Set(dong.map((d) => d.anh).filter((a) => /^https?:\/\//i.test(a)))];
+  const mapUrl = new Map<string, string>();
+  const khoaUrl = await taiAnhVaoDuAn(id, urls);
+  urls.forEach((u, i) => { if (khoaUrl[i]) mapUrl.set(u, khoaUrl[i]); });
+
+  for (const d of dong) {
+    if (!d.anh || mapUrl.has(d.anh) || /^https?:\/\//i.test(d.anh)) continue;
+    const k = await themAnhTuDuongDan(id, d.anh);
+    if (k) mapUrl.set(d.anh, k);
+  }
+
+  const beats: Beat[] = dong.map((d, i) => ({
+    id: `b${i + 1}`,
+    mediaKey: mapUrl.get(d.anh) ?? khoaUrl[0] ?? "",
+    kind: "beat",
+    text: d.text,
+    date: "",
+    headline: [],
+    vo: d.vo || d.text,
+  }));
+
+  const p = await loadProject(id);
+  p.beats = beats;
+  await saveProject(id, p);
+  return { id, soNhip: beats.length, soAnh: mapUrl.size };
+});
+
+/** Chép một ảnh có sẵn trong máy vào dự án, trả về khoá media. */
+async function themAnhTuDuongDan(id: string, duongDan: string): Promise<string | null> {
+  if (!existsSync(duongDan)) return null;
+  try {
+    const dir = path.join(dirOf(id), "assets", "media");
+    await mkdir(dir, { recursive: true });
+    const key = `m${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
+    const finalPath = path.join(dir, `${key}.jpg`);
+    await normalizeImage(duongDan, finalPath);
+    try { await makeThumb(finalPath, path.join(dir, `${key}-thumb.jpg`)); } catch { /* bỏ qua */ }
+    const size = await probeSize(finalPath);
+    const p = await loadProject(id);
+    p.media[key] = {
+      src: `assets/media/${key}.jpg`, kind: "image", position: "50% 50%",
+      mediaStartSec: 0, useSourceAudio: false, width: size?.width, height: size?.height,
+    };
+    await saveProject(id, p);
+    return key;
+  } catch {
+    return null;
+  }
+}
+
+/** Đọc sheet đầu tiên của file Excel thành mảng hai chiều. */
+async function docXlsx(buf: Buffer): Promise<string[][]> {
+  const XLSX = await import("xlsx");
+  const wb = XLSX.read(buf, { type: "buffer" });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, raw: false, defval: "" });
+}
 
 // ───────────────────────────────────────────────── trích xuất bài báo
 
@@ -544,4 +738,4 @@ process.on("unhandledRejection", (e) => console.error("[unhandled]", e));
 
 await mkdir(PROJECTS, { recursive: true });
 await app.listen({ port: PORT, host: "127.0.0.1" });
-console.log(`\n  Video Studio đang chạy:  http://localhost:${PORT}\n`);
+console.log(`\n  Tool News đang chạy:  http://localhost:${PORT}\n`);

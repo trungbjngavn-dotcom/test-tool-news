@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Video Studio — Bản tin dọc</title>
+<title>Tool News — Bản tin dọc</title>
 <link rel="stylesheet" href="/style.css" />
 <script>
   // Chạy trước khi vẽ để không nhấp nháy nền sáng rồi mới sang tối.
   try {
-    if (localStorage.getItem("video-studio-theme") === "dark") {
+    if (localStorage.getItem("tool-news-theme") === "dark") {
       document.documentElement.setAttribute("data-theme", "dark");
     }
   } catch (e) { /* localStorage bị chặn thì cứ để nền sáng */ }
@@ -19,8 +19,8 @@
 <!-- ══════════════════════════════ thanh trên ══════════════════════════════ -->
 <header class="topbar">
   <div class="logo">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="13" height="16" rx="3"/><path d="M18 9.6l3.2-1.9v8.6L18 14.4z"/></svg>
-    <span>Video Studio</span>
+    <img src="/logo.png" alt="" width="24" height="24" />
+    <span>Tool News</span>
   </div>
 
   <div class="proj-switch">
@@ -54,8 +54,73 @@
 <!-- ══════════════════════════════ khung chính ══════════════════════════════ -->
 <main id="app" hidden>
 
-  <!-- ─────────── cột trái: thư viện + cài đặt ─────────── -->
+  <!-- ─────────── cột trái: tự động + thủ công ─────────── -->
   <aside class="rail rail--left">
+
+    <!-- ══ tin mới trong ngày ══ -->
+    <section class="card is-open">
+      <button class="card-head" data-toggle>
+        <span class="ico ico--news"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h11v14H4z"/><path d="M15 9h4a1.5 1.5 0 011.5 1.5v7A1.5 1.5 0 0119 19"/><path d="M6.5 8.5h6M6.5 11.5h6M6.5 14.5h4"/></svg></span>
+        <h2>Tin mới hôm nay</h2>
+        <span id="newsCount" class="pill">—</span>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="card-body">
+        <div class="inline-form">
+          <input id="newsQuery" type="text" value="tin mới ielts" placeholder="Từ khoá…" />
+          <button id="btnNews" class="btn btn--accent btn--sm">Lấy tin</button>
+        </div>
+        <p class="note">Bấm một tin để dựng ngay dự án có sẵn chữ và ảnh.</p>
+        <div id="newsList" class="news-list"></div>
+      </div>
+    </section>
+
+    <!-- ══ từ một link bài báo ══ -->
+    <section class="card is-open">
+      <button class="card-head" data-toggle>
+        <span class="ico ico--web"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 010 18 15 15 0 010-18"/></svg></span>
+        <h2>Từ link bài báo</h2>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="card-body">
+        <div class="inline-form">
+          <input id="articleUrl" type="url" placeholder="Dán link bài báo…" />
+          <button id="btnExtract" class="btn btn--accent btn--sm">Dựng</button>
+        </div>
+        <p class="note">Dán link rồi bấm Dựng — dự án tự có chữ và ảnh của bài đó.</p>
+      </div>
+    </section>
+
+    <!-- ══ từ file bảng ══ -->
+    <section class="card">
+      <button class="card-head" data-toggle>
+        <span class="ico ico--sheet"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9 9.5V19.5M14.5 9.5V19.5"/></svg></span>
+        <h2>Từ file bảng</h2>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="card-body">
+        <button id="btnSheet" class="btn btn--accent btn--sm btn--wide">Chọn file .xlsx / .csv…</button>
+        <input id="sheetInput" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" hidden />
+        <div class="inline-form" style="margin-top:8px">
+          <input id="sheetUrl" type="url" placeholder="hoặc dán link Google Sheets…" />
+          <button id="btnSheetUrl" class="btn btn--soft btn--sm">Nạp</button>
+        </div>
+        <p class="note">
+          Cột nhận theo tên ở hàng đầu: <strong>chữ</strong>, <strong>giọng</strong>,
+          <strong>ảnh</strong>. Ô ảnh nhận cả link lẫn đường dẫn trong máy.
+          Không có hàng tiêu đề thì cột 1 là chữ, cột 2 là ảnh.
+        </p>
+      </div>
+    </section>
+
+    <!-- ══ nhóm thủ công: 4 thẻ cũ gom vào đây ══ -->
+    <section id="thuCongCard" class="card">
+      <button class="card-head" data-toggle>
+        <span class="ico ico--manual"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5V9.5"/><path d="M8.5 13L12 9.5l3.5 3.5"/><rect x="4" y="3.5" width="16" height="3.5" rx="1.5"/></svg></span>
+        <h2>Dự án thủ công</h2>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="card-body card-body--nhom">
 
     <section id="mediaCard" class="card is-open">
       <button class="card-head" data-toggle>
@@ -132,18 +197,6 @@
       </div>
     </section>
 
-    <section class="card">
-      <button class="card-head" data-toggle>
-        <span class="ico ico--web"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 010 18 15 15 0 010-18"/></svg></span>
-        <h2>Lấy từ bài báo</h2>
-        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-      </button>
-      <div class="card-body">
-        <div class="inline-form">
-          <input id="articleUrl" type="url" placeholder="Dán link bài báo…" />
-          <button id="btnExtract" class="btn btn--soft btn--sm">Lấy</button>
-        </div>
-        <div id="extractOut" class="extract" hidden></div>
       </div>
     </section>
   </aside>

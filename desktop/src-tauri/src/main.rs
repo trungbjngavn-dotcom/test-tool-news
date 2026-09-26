@@ -1,4 +1,4 @@
-// Vỏ app máy tính cho Video Studio.
+// Vỏ app máy tính cho Tool News.
 //
 // Tauri không chạy được server Node bên trong WebView, nên cách làm là:
 //   1. bật server Fastify như một tiến trình con (sidecar node.exe + payload)
@@ -43,6 +43,25 @@ fn duong_dan_thuong(p: &std::path::Path) -> String {
     s.strip_prefix("\\\\?\\").map(str::to_string).unwrap_or(s)
 }
 
+/// Tìm chrome-headless-shell trong payload.
+///
+/// Đường dẫn có kèm số phiên bản (`win64-150.0.7871.24`) nên không viết cứng
+/// được — quét một tầng để bản Chrome mới cũng tự nhận.
+fn tim_chrome(payload: &std::path::Path) -> Option<std::path::PathBuf> {
+    let goc = payload.join("chrome");
+    let ten = if cfg!(windows) { "chrome-headless-shell.exe" } else { "chrome-headless-shell" };
+    for muc in std::fs::read_dir(&goc).ok()? {
+        let thu_muc = muc.ok()?.path();
+        for con in std::fs::read_dir(&thu_muc).ok()? {
+            let p = con.ok()?.path().join(ten);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
 /// Server đã nghe cổng chưa. Thử mở TCP là cách chắc nhất.
 fn cong_da_mo(port: u16) -> bool {
     std::net::TcpStream::connect_timeout(
@@ -79,6 +98,19 @@ fn main() {
                 .current_dir(&payload)
                 .env("VIDEO_STUDIO_DATA", duong_dan_thuong(&thu_muc_du_lieu))
                 .env("PORT", PORT.to_string());
+
+            // Chrome và ffmpeg đi kèm trong payload. Không trỏ vào đây thì app
+            // đòi máy người dùng phải có sẵn ffmpeg (hầu như không ai có) và
+            // phải tải 271 MB Chrome ở lần render đầu.
+            let ext = if cfg!(windows) { ".exe" } else { "" };
+            let lenh = match tim_chrome(&payload) {
+                Some(p) => lenh.env("HYPERFRAMES_BROWSER_PATH", duong_dan_thuong(&p)),
+                None => lenh,
+            };
+            let ff = payload.join("ffmpeg");
+            let lenh = lenh
+                .env("HYPERFRAMES_FFMPEG_PATH", duong_dan_thuong(&ff.join(format!("ffmpeg{ext}"))))
+                .env("HYPERFRAMES_FFPROBE_PATH", duong_dan_thuong(&ff.join(format!("ffprobe{ext}"))));
 
             // Bản release ẩn console nên log phải ghi ra file, không thì có lỗi
             // cũng không biết đường nào mà lần.
@@ -124,7 +156,7 @@ fn main() {
                     .parse()
                     .expect("địa chỉ không hợp lệ");
                 let ket_qua = WebviewWindowBuilder::new(&handle, "main", WebviewUrl::External(url))
-                    .title("Video Studio")
+                    .title("Tool News")
                     .inner_size(1440.0, 940.0)
                     .min_inner_size(900.0, 600.0)
                     .center()
