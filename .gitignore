@@ -17,3 +17,10 @@ SFX/
 # Du an nguoi dung: video render, giong doc, media copy vao, cache transcode.
 # Deu la san pham sinh ra tu ma nguon, khong dua len repo.
 projects/
+
+# App may tinh (Tauri): deu sinh ra tu ma nguon
+dist/
+desktop/src-tauri/target/
+desktop/src-tauri/payload/
+desktop/src-tauri/binaries/
+desktop/src-tauri/gen/

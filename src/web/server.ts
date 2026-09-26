@@ -28,8 +28,27 @@ import { VOICES, RATES, PITCHES } from "../newsroom/voices.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..", "..");
-const PROJECTS = path.join(ROOT, "projects");
-const BUNDLED = path.join(ROOT, "src", "newsroom", "assets");
+
+/**
+ * Nơi lưu dự án của người dùng.
+ *
+ * Chạy từ mã nguồn thì để ngay trong repo cho tiện. Nhưng bản đóng gói thành
+ * app cài vào máy nằm ở thư mục chỉ-đọc (Program Files), nên app truyền
+ * VIDEO_STUDIO_DATA trỏ sang thư mục tài liệu của người dùng.
+ */
+const PROJECTS = process.env.VIDEO_STUDIO_DATA
+  ? path.resolve(process.env.VIDEO_STUDIO_DATA, "projects")
+  : path.join(ROOT, "projects");
+
+/**
+ * Asset đi kèm (logo, bản đồ). Chạy từ mã nguồn thì nằm ở src/newsroom/assets;
+ * sau khi biên dịch, script đóng gói chép sang cạnh file đã build.
+ */
+const BUNDLED = [
+  path.join(HERE, "..", "newsroom", "assets"),
+  path.join(ROOT, "src", "newsroom", "assets"),
+].find((d) => existsSync(d)) ?? path.join(ROOT, "src", "newsroom", "assets");
+
 const PORT = Number(process.env.PORT ?? 5174);
 
 const app = Fastify({ logger: false, bodyLimit: 64 * 1024 * 1024 });
@@ -113,8 +132,7 @@ app.post("/api/projects", async (req) => {
   await mkdir(path.join(dirOf(id), "assets", "media"), { recursive: true });
   await mkdir(path.join(dirOf(id), "assets", "brand"), { recursive: true });
   await mkdir(path.join(dirOf(id), "assets", "outro"), { recursive: true });
-  // Logo mặc định đi kèm mã nguồn, chép sẵn vào dự án mới để hiển thị đúng ngay.
-  // Outro thì không đặt sẵn — mỗi người một clip riêng, tự chọn ở cột trái.
+  // badge mặc định để dự án mới hiển thị đúng ngay
   if (existsSync(path.join(BUNDLED, "badge.png"))) {
     await copyFile(path.join(BUNDLED, "badge.png"), path.join(dirOf(id), "assets", "brand", "badge.png"));
   }
@@ -444,7 +462,15 @@ app.post("/api/reveal", async (req) => {
   if (!absolutePath || !existsSync(absolutePath)) {
     throw new Error("Không tìm thấy file để mở.");
   }
-  spawn("explorer.exe", [`/select,${absolutePath}`], { detached: true, stdio: "ignore" }).unref();
+  // Mỗi hệ điều hành một lệnh khác nhau. Windows và macOS chọn sẵn được file;
+  // trên Linux thì chỉ mở được thư mục chứa nó.
+  const [cmd, args] =
+    process.platform === "win32"
+      ? ["explorer.exe", [`/select,${absolutePath}`]]
+      : process.platform === "darwin"
+        ? ["open", ["-R", absolutePath]]
+        : ["xdg-open", [path.dirname(absolutePath)]];
+  spawn(cmd as string, args as string[], { detached: true, stdio: "ignore" }).unref();
   return { ok: true };
 });
 

@@ -17,7 +17,10 @@
     "sfx:download": "tsx scripts/download-sfx.ts",
     "sfx:filter": "tsx scripts/filter-sfx.ts",
     "newsroom": "tsx src/newsroom/cli.ts",
-    "web": "tsx src/web/server.ts"
+    "web": "tsx src/web/server.ts",
+    "desktop:payload": "node scripts/build-desktop-payload.mjs",
+    "desktop:dev": "npm run desktop:payload && tauri dev --config desktop/src-tauri/tauri.conf.json",
+    "desktop:build": "tauri build --config desktop/src-tauri/tauri.conf.json"
   },
   "keywords": [
     "video",
@@ -45,7 +48,7 @@
     "dotenv": "^17.4.2",
     "edge-tts-universal": "^1.4.0",
     "fastify": "^5.12.5",
-    "hyperframes": "^0.4.34",
+    "hyperframes": "0.8.75",
     "p-limit": "^7.3.0",
     "zod": "^4.3.6"
   },

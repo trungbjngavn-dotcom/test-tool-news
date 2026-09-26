@@ -16,6 +16,7 @@ import { computeTimeline } from "./timeline.js";
 import { composeNewsroom } from "./composer.js";
 import { EdgeTtsClient } from "../tts/edge-tts-client.js";
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import type { TtsClient } from "../tts/tts-client.js";
 import { probeDurationSec, trimSilence } from "./media-probe.js";
 
@@ -139,6 +140,20 @@ export async function buildProject(
   return { project: p, compositionDir: projectDir };
 }
 
+/**
+ * Đường dẫn tới HyperFrames CÀI TRONG DỰ ÁN.
+ *
+ * Trước đây gọi `npx --yes hyperframes@0.8.75` nên mỗi máy mới phải tải vài
+ * trăm MB từ mạng trước khi dựng được video đầu tiên. Với bản đóng gói thành
+ * app máy tính thì không chấp nhận được — nay ghim đúng 0.8.75 vào
+ * dependencies và chạy thẳng file trong node_modules.
+ */
+const HF_ENTRY = (() => {
+  const require = createRequire(import.meta.url);
+  const pkg = require.resolve("hyperframes/package.json");
+  return path.join(path.dirname(pkg), "bin", "hyperframes.mjs");
+})();
+
 /** Chạy một lệnh hyperframes, đẩy từng dòng stdout ra onProgress. */
 export function runHyperframes(
   args: string[],
@@ -146,9 +161,9 @@ export function runHyperframes(
   onLine: (line: string) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const proc = spawn("npx", ["--yes", "hyperframes@0.8.75", ...args], {
+    // process.execPath = chính file node đang chạy, nên bản portable cũng đúng
+    const proc = spawn(process.execPath, [HF_ENTRY, ...args], {
       cwd,
-      shell: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
     const feed = (buf: Buffer) => {
