@@ -20,7 +20,7 @@
     "web": "tsx src/web/server.ts",
     "desktop:payload": "node scripts/build-desktop-payload.mjs",
     "desktop:dev": "npm run desktop:payload && tauri dev --config desktop/src-tauri/tauri.conf.json",
-    "desktop:build": "tauri build --config desktop/src-tauri/tauri.conf.json"
+    "desktop:build": "npm run desktop:payload && tauri build --config desktop/src-tauri/tauri.conf.json"
   },
   "keywords": [
     "video",
@@ -53,6 +53,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.5",
     "@types/node": "^25.6.0",
     "@vitest/coverage-v8": "^4.1.5",
     "nock": "^14.0.13",

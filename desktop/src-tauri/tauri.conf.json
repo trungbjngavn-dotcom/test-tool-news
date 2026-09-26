@@ -4,7 +4,6 @@
   "version": "1.0.0",
   "identifier": "vn.videostudio.app",
   "build": {
-    "beforeBuildCommand": "npm --prefix ../.. run desktop:payload",
     "frontendDist": "../placeholder"
   },
   "app": {
@@ -15,18 +14,26 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/node"],
-    "resources": ["payload/**/*"],
+    "externalBin": [
+      "binaries/node"
+    ],
+    "resources": [
+      "payload/**/*"
+    ],
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "languages": ["English"]
+        "languages": [
+          "English"
+        ]
       }
     },
     "shortDescription": "Dung ban tin doc tu text va anh/video",

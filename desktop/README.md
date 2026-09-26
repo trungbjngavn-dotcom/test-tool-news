@@ -58,6 +58,32 @@ Bộ cài nằm ở `desktop/src-tauri/target/release/bundle/nsis/`.
 
 ---
 
+## Hai chỗ đã vấp khi build (ghi lại để khỏi mất công lần sau)
+
+**1. "An Application Control policy has blocked this file" (os error 4551)**
+
+Máy bật Smart App Control nên chặn chạy file `.exe` chưa ký, mà Rust bắt buộc
+phải biên dịch rồi *chạy* build script. Nhưng không phải chặn cứng — nguyên nhân
+là dự án nằm trong `Downloads`, Windows soi thư mục này ngặt hơn. Cách xử lý:
+
+```bash
+set CARGO_TARGET_DIR=C:ust-buildideo-studio
+```
+
+Không cần tắt Smart App Control (mà tắt rồi thì **không bật lại được** nếu không
+cài mới Windows).
+
+**2. `EISDIR: illegal operation on a directory, lstat 'C:'`**
+
+Tauri trả đường dẫn resource dưới dạng UNC mở rộng `\?\C:\...`. Node không
+hiểu dạng này, tách nhầm rồi chết ngay khi khởi động. Hàm `duong_dan_thuong()`
+trong `main.rs` cắt tiền tố đó trước khi truyền sang Node.
+
+Lỗi này chỉ lộ ra ở bản release vì bản đó ẩn console — nên `main.rs` ghi log ra
+`%APPDATA%n.videostudio.app\server.log`. Cứ có vấn đề thì đọc file đó trước.
+
+---
+
 ## Dung lượng
 
 Đo thật sau khi chạy `npm run desktop:payload`:

@@ -24,6 +24,25 @@ const KHOI_DONG_TOI_DA: Duration = Duration::from_secs(90);
 /// Giữ tiến trình con để lúc thoát còn giết được.
 struct MayChu(Arc<Mutex<Option<CommandChild>>>);
 
+/// Nối một dòng vào file log. Lỗi ghi log thì bỏ qua — không đáng để chết app.
+fn ghi_log(duong_dan: &std::path::Path, dong: &str) {
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(duong_dan) {
+        let _ = writeln!(f, "{dong}");
+    }
+}
+
+/// Bỏ tiền tố đường dẫn dài của Windows.
+///
+/// Tauri trả về resource dưới dạng UNC mở rộng. Node không hiểu dạng này:
+/// nó tách nhầm rồi báo `EISDIR: lstat 'C:'` và chết ngay khi khởi động.
+/// Cắt tiền tố đi là chạy bình thường.
+fn duong_dan_thuong(p: &std::path::Path) -> String {
+    let s = p.to_string_lossy().to_string();
+    // chuỗi raw của Rust không kết thúc bằng dấu gạch chéo được
+    s.strip_prefix("\\\\?\\").map(str::to_string).unwrap_or(s)
+}
+
 /// Server đã nghe cổng chưa. Thử mở TCP là cách chắc nhất.
 fn cong_da_mo(port: u16) -> bool {
     std::net::TcpStream::connect_timeout(
@@ -54,28 +73,37 @@ fn main() {
                 .shell()
                 .sidecar("node")
                 .expect("không thấy sidecar node")
-                .args([payload
-                    .join("dist")
-                    .join("web")
-                    .join("server.js")
-                    .to_string_lossy()
-                    .to_string()])
-                .current_dir(payload)
-                .env("VIDEO_STUDIO_DATA", thu_muc_du_lieu.to_string_lossy().to_string())
+                .args([duong_dan_thuong(
+                    &payload.join("dist").join("web").join("server.js"),
+                )])
+                .current_dir(&payload)
+                .env("VIDEO_STUDIO_DATA", duong_dan_thuong(&thu_muc_du_lieu))
                 .env("PORT", PORT.to_string());
 
-            let (mut rx, child) = lenh.spawn().expect("không chạy được server Node");
+            // Bản release ẩn console nên log phải ghi ra file, không thì có lỗi
+            // cũng không biết đường nào mà lần.
+            let file_log = thu_muc_du_lieu.join("server.log");
+            ghi_log(&file_log, &format!("--- khởi động {:?} ---", std::time::SystemTime::now()));
+            ghi_log(&file_log, &format!("payload: {}", payload.display()));
+
+            let (mut rx, child) = match lenh.spawn() {
+                Ok(v) => v,
+                Err(e) => {
+                    ghi_log(&file_log, &format!("KHÔNG chạy được sidecar: {e}"));
+                    return Err(Box::new(e));
+                }
+            };
             app.state::<MayChu>().0.lock().unwrap().replace(child);
 
-            // in log của server ra console để còn gỡ lỗi khi chạy bản dev
+            let log_cho_luong = file_log.clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(su_kien) = rx.recv().await {
                     match su_kien {
                         CommandEvent::Stdout(d) | CommandEvent::Stderr(d) => {
-                            print!("[server] {}", String::from_utf8_lossy(&d));
+                            ghi_log(&log_cho_luong, String::from_utf8_lossy(&d).trim_end());
                         }
                         CommandEvent::Terminated(t) => {
-                            eprintln!("[server] đã dừng, mã {:?}", t.code);
+                            ghi_log(&log_cho_luong, &format!("server dừng, mã {:?}", t.code));
                         }
                         _ => {}
                     }
@@ -88,6 +116,9 @@ fn main() {
                 let bat_dau = Instant::now();
                 while bat_dau.elapsed() < KHOI_DONG_TOI_DA && !cong_da_mo(PORT) {
                     std::thread::sleep(Duration::from_millis(250));
+                }
+                if !cong_da_mo(PORT) {
+                    ghi_log(&file_log, "hết giờ chờ: server không mở được cổng");
                 }
                 let url = format!("http://localhost:{PORT}")
                     .parse()
